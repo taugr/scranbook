@@ -1,0 +1,81 @@
+{
+  "name": "scranbook",
+  "version": "0.1.0",
+  "description": "A private, local-first food diary with configurable vision AI.",
+  "keywords": [
+    "cloudflare-workers",
+    "food-diary",
+    "indexeddb",
+    "lm-studio",
+    "local-first",
+    "nextjs",
+    "openai-compatible",
+    "pwa",
+    "vision-ai"
+  ],
+  "homepage": "https://github.com/taugr/scranbook#readme",
+  "bugs": {
+    "url": "https://github.com/taugr/scranbook/issues"
+  },
+  "license": "MIT",
+  "author": "Tom Auger <tom@tau.gr>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taugr/scranbook.git"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cloudflare:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cloudflare:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "pnpm build && playwright test",
+    "test:live": "tsx scripts/evaluate-live-model.ts",
+    "format": "oxfmt . --check",
+    "format:fix": "oxfmt . --write",
+    "lint": "oxlint -c oxlint.json .",
+    "lint:fix": "oxlint -c oxlint.json . --fix",
+    "prepare": "node scripts/prepare.mjs"
+  },
+  "dependencies": {
+    "@opennextjs/cloudflare": "1.20.0",
+    "idb": "^8.0.3",
+    "jszip": "^3.10.1",
+    "lucide-react": "^1.24.0",
+    "next": "^16.2.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "axe-core": "^4.12.1",
+    "fake-indexeddb": "^6.2.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "oxfmt": "^0.58.0",
+    "oxlint": "^1.73.0",
+    "oxlint-tsgolint": "^0.24.0",
+    "sharp": "^0.35.3",
+    "tsx": "^4.22.4",
+    "typescript": "6.0.3",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.110.0"
+  },
+  "lint-staged": {
+    "*": "oxfmt --no-error-on-unmatched-pattern"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "packageManager": "pnpm@11.9.0"
+}

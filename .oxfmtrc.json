@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    ".next",
+    ".open-next",
+    "next-env.d.ts",
+    "node_modules",
+    "pnpm-lock.yaml"
+  ],
+  "quoteProps": "as-needed",
+  "singleQuote": true,
+  "printWidth": 80,
+  "trailingComma": "all",
+  "tabWidth": 2,
+  "semi": true,
+  "arrowParens": "always",
+  "endOfLine": "lf",
+  "sortPackageJson": false
+}

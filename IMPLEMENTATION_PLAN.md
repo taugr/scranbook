@@ -1,6 +1,6 @@
 # Scranbook Implementation Plan
 
-Status: implemented and locally verified; production release in progress
+Status: implemented, verified, and deployed
 Last updated: 2026-07-12
 
 ## 1. Product goal
@@ -425,7 +425,21 @@ live production AI is not a release gate.
 - The private GitHub repository is pushed and `scranbook.labs.tau.gr` serves the
   verified application shell.
 
-## 15. Deferred work
+## 15. Release record
+
+- Private source: `https://github.com/taugr/scranbook`
+- Production: `https://scranbook.labs.tau.gr`
+- Cloudflare Worker: `scranbook`
+- Production branch: `main`
+- Workers Builds quality gate:
+  `pnpm test && pnpm typecheck && pnpm lint && pnpm format`
+- Workers Builds deploy command: `pnpm cloudflare:deploy`
+- Local model used for release testing: `google/gemma-4-e4b` through LM Studio
+- Release verification: 14 unit tests and 13 browser tests passed; OpenNext
+  preview and the production custom domain returned the expected application,
+  PWA metadata, and security headers.
+
+## 16. Deferred work
 
 - Calories, macro- and micronutrients, allergens, or medical guidance.
 - Accounts, cross-device sync, sharing, social features, or server backups.

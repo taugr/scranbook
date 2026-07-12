@@ -59,6 +59,25 @@ test.beforeEach(async ({ page }) => {
   await clearBrowserData(page);
 });
 
+test('empty mobile diary fits without page scrolling', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name === 'desktop',
+    'The desktop empty state uses its own two-column composition.',
+  );
+  const overflow = await page.evaluate(() => {
+    const scrollingElement =
+      document.scrollingElement ?? document.documentElement;
+    return Math.ceil(scrollingElement.scrollHeight - window.innerHeight);
+  });
+  expect(overflow).toBeLessThanOrEqual(1);
+  await expect(page.getByText('Private by design.')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Add', exact: true }),
+  ).toBeVisible();
+});
+
 test('creates and retains a manual diary entry', async ({ page }) => {
   await expect(
     page.getByRole('heading', {

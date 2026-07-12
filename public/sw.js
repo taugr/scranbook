@@ -1,4 +1,4 @@
-const CACHE_NAME = 'scranbook-shell-v4';
+const CACHE_NAME = 'scranbook-shell-v5';
 const SHELL = [
   '/',
   '/privacy/',

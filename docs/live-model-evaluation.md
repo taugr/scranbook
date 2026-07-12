@@ -7,7 +7,7 @@
 - Fixture: `IMG_20210703_184219.jpg` from the local recipe-generation project
 - Preprocessing: orientation correction, maximum 768 px, JPEG quality 80
 - Response mode: strict JSON Schema
-- Validated latency: 13.45 seconds
+- Validated nutrition-contract latency: 15.85 seconds
 
 ### What worked
 
@@ -17,8 +17,12 @@
 - The image was correctly classified as `recipe_card`.
 - The dish title, “Smoky Chilli Con Carne With Rice”, was identified correctly.
 - The result explicitly warned that recipe-card quantities do not prove what was consumed.
+- The updated response supplied a separate `estimatedGrams` value for every ingredient while
+  leaving calorie and macro calculation to Scranbook's local database engine.
 - A Playwright mobile test also passed through the real browser UI in 13.3 seconds after LM Studio
   was restarted on `127.0.0.1:1234` with its supported `--cors` option.
+- The updated browser-direct test passed again in 26.6 seconds and confirmed that Scranbook does not
+  automatically calculate nutrition for the recipe-card classification.
 
 ### Quality limitations observed
 

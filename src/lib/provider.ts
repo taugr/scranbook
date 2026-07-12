@@ -6,7 +6,7 @@ import {
 } from './schema';
 import { blobToDataUrl } from './image';
 
-export const promptVersion = 'meal-analysis-v1';
+export const promptVersion = 'meal-analysis-v2';
 
 export type ProviderErrorCode =
   | 'aborted'
@@ -30,9 +30,9 @@ export class ProviderError extends Error {
 
 const systemPrompt = `You are helping a person keep a private food diary from a phone photo.
 Return JSON only. Describe visible or reasonably inferable food, and separate observation from estimation.
-Do not claim hidden ingredients with high confidence. Estimate portions in grams, millilitres, or familiar household measures only when defensible.
+Do not claim hidden ingredients with high confidence. For every ingredient, give the visible amount and a separate best estimate of its consumed weight in grams. Use null when a gram estimate is not defensible.
 Classify the image as meal, recipe_card, packaged_food, or unclear. Printed recipe quantities are context, not proof of what was consumed.
-Never provide calorie, medical, allergy, or health advice. Use low confidence and uncertainty notes when evidence is weak.`;
+Do not calculate calories, macros, or other nutritional values; those are calculated locally from food-composition data. Never provide medical, allergy, or health advice. Use low confidence and uncertainty notes when evidence is weak.`;
 
 export const mealResponseJsonSchema = {
   type: 'object',
@@ -58,13 +58,23 @@ export const mealResponseJsonSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['name', 'amount', 'unit', 'preparation', 'confidence'],
+        required: [
+          'name',
+          'amount',
+          'unit',
+          'preparation',
+          'confidence',
+          'estimatedGrams',
+        ],
         properties: {
           name: { type: 'string' },
           amount: { anyOf: [{ type: 'number' }, { type: 'null' }] },
           unit: { anyOf: [{ type: 'string' }, { type: 'null' }] },
           preparation: { anyOf: [{ type: 'string' }, { type: 'null' }] },
           confidence: { enum: ['low', 'medium', 'high'] },
+          estimatedGrams: {
+            anyOf: [{ type: 'number' }, { type: 'null' }],
+          },
         },
       },
     },

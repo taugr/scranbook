@@ -15,6 +15,7 @@ const result = {
       unit: 'g',
       preparation: 'steamed',
       confidence: 'high',
+      estimatedGrams: 280,
     },
     {
       name: 'beef mince',
@@ -22,6 +23,7 @@ const result = {
       unit: 'g',
       preparation: null,
       confidence: 'medium',
+      estimatedGrams: 250,
     },
   ],
   overallConfidence: 'medium',
@@ -72,6 +74,31 @@ test('captures the visual review surfaces', async ({ page }, testInfo) => {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
     path: `output/visual-review/${project}-entry.png`,
+    fullPage: false,
+  });
+
+  await page
+    .locator(project === 'mobile' ? '.mobile-add' : '.desktop-add')
+    .click();
+  await page.getByLabel('What was it?').fill('Fresh tomato salad');
+  await page.getByLabel('Portion').fill('A 150 g bowl of fresh tomatoes');
+  await page.getByRole('button', { name: 'Add ingredient' }).click();
+  await page
+    .getByRole('textbox', { name: 'Ingredient', exact: true })
+    .fill('tomatoes');
+  await page.getByLabel('Amount', { exact: true }).fill('150');
+  await page.getByLabel('Unit', { exact: true }).fill('g');
+  await page.getByLabel('Estimated grams').fill('150');
+  await page.getByLabel('Preparation').fill('raw');
+  await page.getByRole('button', { name: 'Calculate locally' }).click();
+  await expect(page.getByLabel('Energy (kcal)')).not.toHaveValue('');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  const nutritionCard = page.locator('.nutrition-card');
+  await expect(nutritionCard).toBeVisible();
+  if (await dismiss.isVisible()) await dismiss.click();
+  await nutritionCard.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: `output/visual-review/${project}-nutrition.png`,
     fullPage: false,
   });
 });

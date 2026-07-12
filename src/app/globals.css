@@ -499,6 +499,7 @@ a:focus-visible {
   font-size: 1.35rem;
 }
 .ingredient-card,
+.nutrition-card,
 .notes-card,
 .form-card,
 .settings-card {
@@ -510,6 +511,90 @@ a:focus-visible {
 .ingredient-card {
   margin-top: 34px;
   padding: 28px;
+}
+.nutrition-card {
+  margin-top: 30px;
+  padding: 28px;
+  border-top: 4px solid var(--sage);
+}
+.local-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  color: #41523b;
+  background: var(--sage-light);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+.nutrition-facts {
+  display: grid;
+  grid-template-columns: 145px 1fr;
+  gap: 24px;
+  align-items: center;
+  margin-top: 22px;
+}
+.nutrition-energy {
+  min-height: 125px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  border-radius: 45% 55% 48% 52%;
+  background: rgba(230, 184, 93, 0.24);
+  transform: rotate(-2deg);
+}
+.nutrition-energy strong {
+  font-family: var(--font-display), Georgia, serif;
+  font-size: 2.5rem;
+  line-height: 1;
+}
+.nutrition-energy span {
+  color: var(--muted);
+  font-weight: 900;
+  font-size: 0.75rem;
+}
+.nutrition-facts dl {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(70px, 1fr));
+  margin: 0;
+  gap: 10px;
+}
+.nutrition-facts dl div {
+  border-left: 1px solid var(--line);
+  padding-left: 12px;
+}
+.nutrition-facts dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.nutrition-facts dd {
+  margin: 4px 0 0;
+  font-weight: 900;
+}
+.nutrition-disclaimer,
+.nutrition-warning {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+.nutrition-disclaimer {
+  margin: 18px 0 0;
+}
+.nutrition-warning {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(230, 184, 93, 0.22);
+  color: #6b5019;
+  font-weight: 800;
+  margin: 16px 0 0;
+}
+.nutrition-notes {
+  margin-bottom: 0;
+  border-bottom: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
 }
 .section-heading {
   display: flex;
@@ -810,11 +895,45 @@ textarea {
 }
 .ingredient-editor {
   display: grid;
-  grid-template-columns: minmax(125px, 1.6fr) 0.65fr 0.9fr 0.8fr 36px;
+  grid-template-columns: minmax(125px, 1.55fr) 0.6fr 0.75fr 0.75fr 0.75fr 36px;
   gap: 9px;
   align-items: end;
   padding: 13px 0;
   border-top: 1px solid var(--line);
+}
+.nutrition-match {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sage);
+  font-size: 0.74rem;
+  margin: 1px 0 0;
+}
+.ingredient-preparation {
+  grid-column: 1 / -1;
+}
+.nutrition-editor-card {
+  border-top: 4px solid var(--sage);
+}
+.nutrition-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0 12px;
+  margin-top: 18px;
+}
+.nutrition-inputs label {
+  margin-bottom: 12px;
+}
+.nutrition-empty {
+  margin: 18px 0 0;
+}
+.nutrition-editor-notes {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  padding-left: 20px;
+  margin-bottom: 0;
 }
 .ingredient-editor label {
   margin: 0;
@@ -1141,6 +1260,22 @@ code {
   .ingredient-card {
     padding: 20px;
   }
+  .nutrition-card {
+    padding: 20px;
+  }
+  .nutrition-facts {
+    grid-template-columns: 105px 1fr;
+    gap: 14px;
+  }
+  .nutrition-energy {
+    min-height: 102px;
+  }
+  .nutrition-energy strong {
+    font-size: 2rem;
+  }
+  .nutrition-facts dl {
+    grid-template-columns: repeat(2, 1fr);
+  }
   .section-heading {
     align-items: flex-start;
     flex-direction: column;
@@ -1191,15 +1326,20 @@ code {
     grid-template-columns: 1.3fr 0.65fr 36px;
   }
   .ingredient-editor label:nth-of-type(3),
-  .ingredient-editor label:nth-of-type(4) {
+  .ingredient-editor label:nth-of-type(4),
+  .ingredient-editor label:nth-of-type(5) {
     grid-row: 2;
   }
   .ingredient-editor .remove-row {
     grid-column: 3;
     grid-row: 1;
   }
-  .ingredient-editor label:nth-of-type(4) {
+  .ingredient-editor label:nth-of-type(5) {
     grid-column: 2 / 4;
+    grid-row: 3;
+  }
+  .nutrition-inputs {
+    grid-template-columns: repeat(2, 1fr);
   }
   .settings-stack {
     display: flex;

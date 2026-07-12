@@ -61,7 +61,7 @@ const response = await fetch(`${baseUrl}/chat/completions`, {
       {
         role: 'system',
         content:
-          'Return JSON only for a private food diary. Classify as meal, recipe_card, packaged_food, or unclear. Printed recipe quantities are context, not proof of consumption. Include dishName, servings, portionSummary, ingredients with name/amount/unit/preparation/confidence, overallConfidence, and uncertaintyNotes. Never provide medical or allergy claims.',
+          'Return JSON only for a private food diary. Classify as meal, recipe_card, packaged_food, or unclear. Printed recipe quantities are context, not proof of consumption. Include dishName, servings, portionSummary, ingredients with name/amount/unit/preparation/confidence/estimatedGrams, overallConfidence, and uncertaintyNotes. Do not calculate nutrition or provide medical or allergy claims.',
       },
       {
         role: 'user',

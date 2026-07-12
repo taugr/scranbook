@@ -27,11 +27,13 @@ development profile, but the provider is configurable.
 - Camera or gallery capture with browser-side resize and metadata removal.
 - Manual diary entry that works without an AI model.
 - Editable dish, portion, ingredient, confidence, and uncertainty fields.
+- Editable calorie and macro estimates calculated locally from bundled official
+  food-composition data.
 - Local IndexedDB persistence with export, import, deletion, and storage visibility.
 - Configurable model URL, model ID, API key, headers, timeout, and response mode.
 - Mobile diary/add/settings navigation and a two-column desktop journal.
 - Installable offline PWA shell with local diary access.
-- No nutrition, medical, allergy, or food-safety claims.
+- No external nutrition API and no medical, allergy, or food-safety claims.
 
 ## Requirements
 
@@ -79,6 +81,7 @@ pnpm lint
 pnpm format
 pnpm test:e2e
 pnpm test:live -- --image /path/to/meal.jpg
+pnpm nutrition:data
 pnpm cloudflare:preview
 pnpm cloudflare:deploy
 ```
@@ -86,6 +89,10 @@ pnpm cloudflare:deploy
 `test:live` is opt-in and never runs in CI. It defaults to the local recipe-card fixture path recorded
 in [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md), resizes the image before inference, and prints
 validated output plus latency without logging image bytes or credentials.
+
+`nutrition:data` reproducibly downloads the pinned USDA FoodData Central and UK CoFID releases and
+rebuilds the committed browser index. Production never downloads those upstream datasets or calls a
+nutrition API at runtime. See [docs/nutrition-data.md](./docs/nutrition-data.md).
 
 ## Privacy
 
@@ -112,11 +119,11 @@ Cloudflare Workers Builds should connect to the private `taugr/scranbook` reposi
 ```text
 src/app/                 Next.js routes, metadata, privacy page, and styling
 src/components/          Diary, capture, review, and settings interface
-src/lib/                 schemas, IndexedDB, images, archives, and model provider
+src/lib/                 schemas, IndexedDB, images, nutrition, archives, and model provider
 tests/                   Vitest coverage
 tests/e2e/               Playwright mobile, desktop, PWA, and accessibility coverage
-scripts/                 guarded setup and opt-in live-model evaluation
-public/                  manifest, service worker, and app icons
+scripts/                 setup, dataset generation, and opt-in live-model evaluation
+public/                  PWA assets and the bundled local nutrition index
 ```
 
 ## Quality gate

@@ -15,6 +15,23 @@ export const mealTypeSchema = z.enum([
   'other',
 ]);
 
+export const nutritionValuesSchema = z.object({
+  energyKcal: z.number().finite().nonnegative().nullable(),
+  proteinG: z.number().finite().nonnegative().nullable(),
+  carbsG: z.number().finite().nonnegative().nullable(),
+  fatG: z.number().finite().nonnegative().nullable(),
+  fibreG: z.number().finite().nonnegative().nullable(),
+  saltG: z.number().finite().nonnegative().nullable(),
+});
+
+export const nutritionMatchSchema = z.object({
+  foodId: z.string(),
+  foodName: z.string(),
+  source: z.enum(['usda_foundation', 'usda_fndds', 'uk_cofid']),
+  confidence: confidenceSchema,
+  valuesPer100g: nutritionValuesSchema,
+});
+
 export const ingredientSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -22,6 +39,19 @@ export const ingredientSchema = z.object({
   unit: z.string().nullable(),
   preparation: z.string().nullable(),
   confidence: confidenceSchema,
+  estimatedGrams: z.number().finite().nonnegative().nullable().default(null),
+  nutritionMatch: nutritionMatchSchema.nullable().default(null),
+});
+
+export const mealNutritionSchema = z.object({
+  values: nutritionValuesSchema,
+  matchedIngredientCount: z.number().int().nonnegative(),
+  ingredientCount: z.number().int().nonnegative(),
+  databaseVersion: z.string(),
+  calculatedAt: z.string(),
+  edited: z.boolean().default(false),
+  stale: z.boolean().default(false),
+  notes: z.array(z.string()).default([]),
 });
 
 export const mealAnalysisSchema = z.object({
@@ -30,7 +60,9 @@ export const mealAnalysisSchema = z.object({
   servings: z.number().finite().positive().nullable(),
   portionSummary: z.string(),
   ingredients: z.array(
-    ingredientSchema.omit({ id: true }).extend({ id: z.string().optional() }),
+    ingredientSchema
+      .omit({ id: true, nutritionMatch: true })
+      .extend({ id: z.string().optional() }),
   ),
   overallConfidence: confidenceSchema,
   uncertaintyNotes: z.array(z.string()),
@@ -55,6 +87,7 @@ export const mealEntrySchema = z.object({
   servings: z.number().finite().positive().nullable(),
   portionSummary: z.string(),
   ingredients: z.array(ingredientSchema),
+  nutrition: mealNutritionSchema.nullable().default(null),
   photoId: z.string().nullable(),
   analysis: analysisMetadataSchema.nullable(),
   createdAt: z.string(),
@@ -102,6 +135,9 @@ export type Confidence = z.infer<typeof confidenceSchema>;
 export type Classification = z.infer<typeof classificationSchema>;
 export type MealType = z.infer<typeof mealTypeSchema>;
 export type Ingredient = z.infer<typeof ingredientSchema>;
+export type NutritionValues = z.infer<typeof nutritionValuesSchema>;
+export type NutritionMatch = z.infer<typeof nutritionMatchSchema>;
+export type MealNutrition = z.infer<typeof mealNutritionSchema>;
 export type MealAnalysis = z.infer<typeof mealAnalysisSchema>;
 export type AnalysisMetadata = z.infer<typeof analysisMetadataSchema>;
 export type MealEntry = z.infer<typeof mealEntrySchema>;
@@ -155,6 +191,7 @@ export function createBlankEntry(now = new Date()): MealEntry {
     servings: null,
     portionSummary: '',
     ingredients: [],
+    nutrition: null,
     photoId: null,
     analysis: null,
     createdAt: timestamp,

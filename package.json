@@ -37,6 +37,7 @@
     "test:watch": "vitest",
     "test:e2e": "pnpm build && playwright test",
     "test:live": "tsx scripts/evaluate-live-model.ts",
+    "nutrition:data": "tsx scripts/build-nutrition-data.ts",
     "format": "oxfmt . --check",
     "format:fix": "oxfmt . --write",
     "lint": "oxlint -c oxlint.json .",

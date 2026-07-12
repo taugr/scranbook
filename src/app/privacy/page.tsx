@@ -33,10 +33,26 @@ export default function PrivacyPage() {
         and separately clear model credentials. Removing site data in your
         browser also removes Scranbook data from that browser profile.
       </p>
+      <h2>Local nutrition estimates</h2>
+      <p>
+        Nutrition calculations do not call a nutrition service. Scranbook
+        matches your edited ingredient names and gram estimates against a
+        bundled copy of{' '}
+        <a href="https://fdc.nal.usda.gov/download-datasets/">
+          USDA FoodData Central
+        </a>{' '}
+        and the UK{' '}
+        <a href="https://www.gov.uk/government/publications/composition-of-foods-integrated-dataset-cofid">
+          Composition of Foods Integrated Dataset
+        </a>
+        . The matching and arithmetic happen in this browser and remain
+        available offline.
+      </p>
       <h2>Important limits</h2>
       <p>
-        Model output is an editable estimate, not nutritional, allergy, medical,
-        or food-safety advice. Locally stored credentials can be read by code
+        Ingredient recognition, portion weights, database matches, and
+        nutritional totals are editable estimates, not allergy, medical, or
+        food-safety advice. Locally stored credentials can be read by code
         running under the Scranbook origin; session-only credential storage is
         available for reduced persistence.
       </p>

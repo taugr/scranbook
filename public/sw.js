@@ -1,5 +1,11 @@
-const CACHE_NAME = 'scranbook-shell-v1';
-const SHELL = ['/', '/privacy', '/manifest.webmanifest', '/icon.svg'];
+const CACHE_NAME = 'scranbook-shell-v2';
+const SHELL = [
+  '/',
+  '/privacy',
+  '/manifest.webmanifest',
+  '/icon.svg',
+  '/nutrition/foods.json',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)));

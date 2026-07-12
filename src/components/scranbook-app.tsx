@@ -2,10 +2,12 @@
 
 import {
   BookOpen,
+  Calculator,
   Camera,
   Check,
   ChevronLeft,
   CircleHelp,
+  Database,
   Download,
   ImagePlus,
   LoaderCircle,
@@ -43,6 +45,7 @@ import {
   storageEstimate,
 } from '@/lib/db';
 import { processImage, rotatePhoto } from '@/lib/image';
+import { estimateMealNutrition } from '@/lib/nutrition';
 import {
   analyseMeal,
   promptVersion,
@@ -56,6 +59,7 @@ import {
   type Ingredient,
   type MealEntry,
   type ModelSettings,
+  type NutritionValues,
   type StoredPhoto,
 } from '@/lib/schema';
 
@@ -321,6 +325,24 @@ export function ScranbookApp() {
         modelSettings,
         abortRef.current.signal,
       );
+      const analysedIngredients: Ingredient[] = result.ingredients.map(
+        (ingredient) => ({
+          ...ingredient,
+          id: ingredient.id ?? crypto.randomUUID(),
+          nutritionMatch: null,
+        }),
+      );
+      let nutritionEstimate:
+        | Awaited<ReturnType<typeof estimateMealNutrition>>
+        | undefined;
+      if (result.classification === 'meal') {
+        try {
+          setBusy('Matching ingredients to local nutrition data…');
+          nutritionEstimate = await estimateMealNutrition(analysedIngredients);
+        } catch {
+          // The model result remains useful if the bundled index cannot load.
+        }
+      }
       const now = new Date().toISOString();
       setDraft((current) => ({
         ...current,
@@ -328,10 +350,8 @@ export function ScranbookApp() {
         classification: result.classification,
         servings: result.servings,
         portionSummary: result.portionSummary,
-        ingredients: result.ingredients.map((ingredient) => ({
-          ...ingredient,
-          id: ingredient.id ?? crypto.randomUUID(),
-        })),
+        ingredients: nutritionEstimate?.ingredients ?? analysedIngredients,
+        nutrition: nutritionEstimate?.nutrition ?? null,
         notes:
           result.uncertaintyNotes.length > 0
             ? `${current.notes}${current.notes ? '\n\n' : ''}Model notes: ${result.uncertaintyNotes.join(' • ')}`
@@ -345,7 +365,9 @@ export function ScranbookApp() {
         },
       }));
       setNotice(
-        'The model made a first pass. Check every estimate before saving.',
+        nutritionEstimate
+          ? 'The model made a first pass and nutrition was calculated locally. Check every estimate before saving.'
+          : 'The model made a first pass. Check every estimate before saving.',
       );
     } catch (caught) {
       setError(errorMessage(caught));
@@ -393,8 +415,13 @@ export function ScranbookApp() {
     setDraft((current) => ({
       ...current,
       ingredients: current.ingredients.map((ingredient, candidate) =>
-        candidate === index ? { ...ingredient, ...patch } : ingredient,
+        candidate === index
+          ? { ...ingredient, ...patch, nutritionMatch: null }
+          : ingredient,
       ),
+      nutrition: current.nutrition
+        ? { ...current.nutrition, stale: true }
+        : null,
     }));
   }
 
@@ -404,6 +431,9 @@ export function ScranbookApp() {
       ingredients: current.ingredients.filter(
         (_, candidate) => candidate !== index,
       ),
+      nutrition: current.nutrition
+        ? { ...current.nutrition, stale: true }
+        : null,
     }));
   }
 
@@ -419,9 +449,59 @@ export function ScranbookApp() {
           unit: null,
           preparation: null,
           confidence: 'medium',
+          estimatedGrams: null,
+          nutritionMatch: null,
         },
       ],
+      nutrition: current.nutrition
+        ? { ...current.nutrition, stale: true }
+        : null,
     }));
+  }
+
+  async function calculateDraftNutrition() {
+    resetMessages();
+    if (draft.ingredients.length === 0) {
+      setError('Add at least one ingredient before estimating nutrition.');
+      return;
+    }
+    if (draft.classification !== 'meal') {
+      setError(
+        'Nutrition is only calculated for a consumed meal. Change the image kind to Meal and enter the amounts you ate first.',
+      );
+      return;
+    }
+    setBusy('Calculating nutrition on this device…');
+    try {
+      const estimate = await estimateMealNutrition(draft.ingredients);
+      setDraft((current) => ({
+        ...current,
+        ingredients: estimate.ingredients,
+        nutrition: estimate.nutrition,
+      }));
+      setNotice(
+        `Matched ${estimate.nutrition.matchedIngredientCount} of ${estimate.nutrition.ingredientCount} ingredients to the local database.`,
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function updateNutrition(patch: Partial<NutritionValues>) {
+    setDraft((current) =>
+      current.nutrition
+        ? {
+            ...current,
+            nutrition: {
+              ...current.nutrition,
+              values: { ...current.nutrition.values, ...patch },
+              edited: true,
+            },
+          }
+        : current,
+    );
   }
 
   async function saveSettings() {
@@ -661,6 +741,8 @@ export function ScranbookApp() {
               onIngredientChange={updateIngredient}
               onIngredientRemove={removeIngredient}
               onIngredientAdd={addIngredient}
+              onCalculateNutrition={() => void calculateDraftNutrition()}
+              onNutritionChange={updateNutrition}
               onSave={() => void saveDraft()}
               onOpenSettings={() => setScreen('settings')}
             />
@@ -781,6 +863,7 @@ function EntryDetail({
         {entry.portionSummary && (
           <p className="portion-lead">{entry.portionSummary}</p>
         )}
+        {entry.nutrition && <NutritionSummary nutrition={entry.nutrition} />}
         <section className="ingredient-card">
           <div className="section-heading">
             <h2>On the plate</h2>
@@ -799,9 +882,16 @@ function EntryDetail({
                     {ingredient.preparation && (
                       <small>{ingredient.preparation}</small>
                     )}
+                    {ingredient.nutritionMatch && (
+                      <small>
+                        Matched to {ingredient.nutritionMatch.foodName}
+                      </small>
+                    )}
                   </span>
                   <span className="ingredient-amount">
-                    {ingredient.amount ?? '—'} {ingredient.unit ?? ''}
+                    {ingredient.estimatedGrams !== null
+                      ? `${ingredient.estimatedGrams} g`
+                      : `${ingredient.amount ?? '—'} ${ingredient.unit ?? ''}`}
                     <ConfidenceDot value={ingredient.confidence} />
                   </span>
                 </li>
@@ -833,6 +923,74 @@ function EntryDetail({
   );
 }
 
+function nutrientValue(value: number | null, suffix: string) {
+  return value === null ? '—' : `${value.toLocaleString()}${suffix}`;
+}
+
+function NutritionSummary({
+  nutrition,
+}: {
+  nutrition: NonNullable<MealEntry['nutrition']>;
+}) {
+  const { values } = nutrition;
+  return (
+    <section className="nutrition-card" aria-labelledby="nutrition-heading">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Local food data</p>
+          <h2 id="nutrition-heading">Estimated nutrition</h2>
+        </div>
+        <span className="local-label">
+          <Database /> No nutrition API
+        </span>
+      </div>
+      <div className="nutrition-facts">
+        <div className="nutrition-energy">
+          <strong>{nutrientValue(values.energyKcal, '')}</strong>
+          <span>kcal</span>
+        </div>
+        <dl>
+          <div>
+            <dt>Protein</dt>
+            <dd>{nutrientValue(values.proteinG, ' g')}</dd>
+          </div>
+          <div>
+            <dt>Carbs</dt>
+            <dd>{nutrientValue(values.carbsG, ' g')}</dd>
+          </div>
+          <div>
+            <dt>Fat</dt>
+            <dd>{nutrientValue(values.fatG, ' g')}</dd>
+          </div>
+          <div>
+            <dt>Fibre</dt>
+            <dd>{nutrientValue(values.fibreG, ' g')}</dd>
+          </div>
+          <div>
+            <dt>Salt</dt>
+            <dd>{nutrientValue(values.saltG, ' g')}</dd>
+          </div>
+        </dl>
+      </div>
+      <p className="nutrition-disclaimer">
+        Based on {nutrition.matchedIngredientCount} of{' '}
+        {nutrition.ingredientCount} ingredient matches from bundled USDA and UK
+        food-composition data. This is a rough estimate, not medical guidance.
+      </p>
+      {nutrition.notes.length > 0 && (
+        <details className="nutrition-notes">
+          <summary>{nutrition.notes.length} estimate notes</summary>
+          <ul>
+            {nutrition.notes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
+
 function MealEditor({
   draft,
   photoUrl,
@@ -849,6 +1007,8 @@ function MealEditor({
   onIngredientChange,
   onIngredientRemove,
   onIngredientAdd,
+  onCalculateNutrition,
+  onNutritionChange,
   onSave,
   onOpenSettings,
 }: {
@@ -867,6 +1027,8 @@ function MealEditor({
   onIngredientChange: (index: number, patch: Partial<Ingredient>) => void;
   onIngredientRemove: (index: number) => void;
   onIngredientAdd: () => void;
+  onCalculateNutrition: () => void;
+  onNutritionChange: (patch: Partial<NutritionValues>) => void;
   onSave: () => void;
   onOpenSettings: () => void;
 }) {
@@ -1122,6 +1284,23 @@ function MealEditor({
                   />
                 </label>
                 <label>
+                  <span>Estimated grams</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={ingredient.estimatedGrams ?? ''}
+                    placeholder="—"
+                    onChange={(event) =>
+                      onIngredientChange(index, {
+                        estimatedGrams: event.target.value
+                          ? Number(event.target.value)
+                          : null,
+                      })
+                    }
+                  />
+                </label>
+                <label>
                   <span>Confidence</span>
                   <select
                     value={ingredient.confidence}
@@ -1144,12 +1323,40 @@ function MealEditor({
                 >
                   <X />
                 </button>
+                <label className="ingredient-preparation">
+                  <span>Preparation</span>
+                  <input
+                    value={ingredient.preparation ?? ''}
+                    placeholder="e.g. raw, roasted, steamed"
+                    onChange={(event) =>
+                      onIngredientChange(index, {
+                        preparation: event.target.value || null,
+                      })
+                    }
+                  />
+                </label>
+                {ingredient.nutritionMatch && (
+                  <p className="nutrition-match">
+                    <Database /> {ingredient.nutritionMatch.foodName} ·{' '}
+                    {ingredient.nutritionMatch.source === 'uk_cofid'
+                      ? 'UK CoFID'
+                      : 'USDA FoodData Central'}{' '}
+                    · {ingredient.nutritionMatch.confidence} match
+                  </p>
+                )}
               </div>
             ))}
             <button className="add-row" onClick={onIngredientAdd}>
               <Plus /> Add ingredient
             </button>
           </div>
+
+          <NutritionEditor
+            nutrition={draft.nutrition}
+            onCalculate={onCalculateNutrition}
+            onChange={onNutritionChange}
+            disabled={Boolean(busy)}
+          />
 
           <div className="form-card">
             <label>
@@ -1173,6 +1380,98 @@ function MealEditor({
         </div>
       </div>
     </section>
+  );
+}
+
+function NutritionEditor({
+  nutrition,
+  onCalculate,
+  onChange,
+  disabled,
+}: {
+  nutrition: MealEntry['nutrition'];
+  onCalculate: () => void;
+  onChange: (patch: Partial<NutritionValues>) => void;
+  disabled: boolean;
+}) {
+  const fields: Array<{
+    key: keyof NutritionValues;
+    label: string;
+    unit: string;
+  }> = [
+    { key: 'energyKcal', label: 'Energy', unit: 'kcal' },
+    { key: 'proteinG', label: 'Protein', unit: 'g' },
+    { key: 'carbsG', label: 'Carbohydrates', unit: 'g' },
+    { key: 'fatG', label: 'Fat', unit: 'g' },
+    { key: 'fibreG', label: 'Fibre', unit: 'g' },
+    { key: 'saltG', label: 'Salt', unit: 'g' },
+  ];
+  return (
+    <div className="form-card nutrition-editor-card">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Calculated on this device</p>
+          <h2>Estimated nutrition</h2>
+        </div>
+        <button
+          className="button button--quiet"
+          onClick={onCalculate}
+          disabled={disabled}
+        >
+          <Calculator /> {nutrition ? 'Recalculate' : 'Calculate locally'}
+        </button>
+      </div>
+      {nutrition ? (
+        <>
+          {nutrition.stale && (
+            <p className="nutrition-warning">
+              Ingredients changed. Recalculate to refresh these values.
+            </p>
+          )}
+          <div className="nutrition-inputs">
+            {fields.map(({ key, label, unit }) => (
+              <label key={key}>
+                <span>
+                  {label} <small>{unit}</small>
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  aria-label={`${label} (${unit})`}
+                  value={nutrition.values[key] ?? ''}
+                  onChange={(event) =>
+                    onChange({
+                      [key]: event.target.value
+                        ? Number(event.target.value)
+                        : null,
+                    })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <p className="nutrition-disclaimer">
+            {nutrition.matchedIngredientCount} of {nutrition.ingredientCount}{' '}
+            ingredients matched to bundled USDA FoodData Central and UK CoFID
+            records. Values remain editable because both photo portions and food
+            matches are estimates.
+          </p>
+          {nutrition.notes.length > 0 && (
+            <ul className="nutrition-editor-notes">
+              {nutrition.notes.map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <p className="muted nutrition-empty">
+          Add gram estimates, then match ingredients against the bundled food
+          database. No meal details are sent to a nutrition service.
+        </p>
+      )}
+    </div>
   );
 }
 

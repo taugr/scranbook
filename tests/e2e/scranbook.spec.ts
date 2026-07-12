@@ -13,6 +13,7 @@ const analysis = {
       unit: 'slices',
       preparation: 'toasted',
       confidence: 'high',
+      estimatedGrams: 80,
     },
     {
       name: 'tomatoes',
@@ -20,6 +21,7 @@ const analysis = {
       unit: 'g',
       preparation: 'chopped',
       confidence: 'medium',
+      estimatedGrams: 120,
     },
   ],
   overallConfidence: 'medium',
@@ -65,6 +67,8 @@ test('creates and retains a manual diary entry', async ({ page }) => {
     .getByRole('spinbutton', { name: 'Amount', exact: true })
     .fill('120');
   await page.getByRole('textbox', { name: 'Unit', exact: true }).fill('g');
+  await page.getByRole('button', { name: 'Calculate locally' }).click();
+  await expect(page.getByLabel('Energy (kcal)')).not.toHaveValue('');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await expect(
     page.getByRole('heading', { name: 'Mushroom toast' }),
@@ -74,6 +78,9 @@ test('creates and retains a manual diary entry', async ({ page }) => {
     page.getByRole('heading', { name: 'Mushroom toast' }),
   ).toBeVisible();
   await expect(page.getByText('Mushrooms', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Estimated nutrition' }),
+  ).toBeVisible();
 });
 
 test('analyses a selected image through a mocked compatible endpoint', async ({
@@ -109,12 +116,51 @@ test('analyses a selected image through a mocked compatible endpoint', async ({
   await expect(page.getByLabel('Ingredient').first()).toHaveValue(
     'sourdough bread',
   );
+  await expect(page.getByLabel('Energy (kcal)')).not.toHaveValue('');
   await expect(
     page.getByText(/Check every estimate before saving/),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await expect(
     page.getByRole('heading', { name: 'Tomato and herb toast' }),
+  ).toBeVisible();
+});
+
+test('does not treat recipe quantities as a consumed nutrition estimate', async ({
+  page,
+}) => {
+  await page.route('**/v1/chat/completions', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                ...analysis,
+                classification: 'recipe_card',
+              }),
+            },
+          },
+        ],
+      }),
+    });
+  });
+  await page
+    .getByRole('main')
+    .getByRole('button', { name: 'Add your first meal' })
+    .click();
+  await page
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles('public/icon-192.png');
+  await page.getByLabel(/I understand this photo goes directly/).check();
+  await page.getByRole('button', { name: 'Analyse photo' }).click();
+  await expect(page.getByLabel('Kind of image')).toHaveValue('recipe_card');
+  await expect(page.getByLabel('Energy (kcal)')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Calculate locally' }).click();
+  await expect(
+    page.getByText(/Nutrition is only calculated for a consumed meal/),
   ).toBeVisible();
 });
 
@@ -154,6 +200,30 @@ test('has an installable manifest and no serious accessibility violations', asyn
   const manifest = await page.request.get('/manifest.webmanifest');
   expect(manifest.ok()).toBe(true);
   expect((await manifest.json()).display).toBe('standalone');
+  const nutritionDatabase = await page.request.get('/nutrition/foods.json');
+  expect(nutritionDatabase.ok()).toBe(true);
+  const nutritionPayload = (await nutritionDatabase.json()) as {
+    version: string;
+    foods: unknown[];
+  };
+  expect(nutritionPayload.version).toContain('cofid-2021');
+  expect(nutritionPayload.foods.length).toBeGreaterThan(8_000);
+  await page
+    .getByRole('main')
+    .getByRole('button', { name: 'Add your first meal' })
+    .click();
+  await page.getByLabel('What was it?').fill('Accessible tomato salad');
+  await page.getByRole('button', { name: 'Add ingredient' }).click();
+  await page
+    .getByRole('textbox', { name: 'Ingredient', exact: true })
+    .fill('tomatoes');
+  await page.getByLabel('Estimated grams').fill('150');
+  await page.getByLabel('Preparation').fill('raw');
+  await page.getByRole('button', { name: 'Calculate locally' }).click();
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Estimated nutrition' }),
+  ).toBeVisible();
   await page.addScriptTag({ content: axe.source });
   const violations = await page.evaluate(async () => {
     const runner = (
@@ -186,6 +256,14 @@ test('keeps the diary available offline', async ({
     .getByRole('button', { name: 'Add your first meal' })
     .click();
   await page.getByLabel('What was it?').fill('Offline soup');
+  await page.getByRole('button', { name: 'Add ingredient' }).click();
+  await page
+    .getByRole('textbox', { name: 'Ingredient', exact: true })
+    .fill('potatoes');
+  await page.getByLabel('Amount', { exact: true }).fill('200');
+  await page.getByLabel('Unit', { exact: true }).fill('g');
+  await page.getByLabel('Preparation').fill('boiled');
+  await page.getByRole('button', { name: 'Calculate locally' }).click();
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.evaluate(async () => {
     if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
@@ -197,5 +275,8 @@ test('keeps the diary available offline', async ({
     page.getByRole('heading', { name: 'Offline soup' }),
   ).toBeVisible();
   await expect(page.getByText('Offline', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit' }).click();
+  await page.getByRole('button', { name: 'Recalculate' }).click();
+  await expect(page.getByLabel('Energy (kcal)')).not.toHaveValue('');
   await context.setOffline(false);
 });

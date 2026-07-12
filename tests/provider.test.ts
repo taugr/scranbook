@@ -18,6 +18,7 @@ const validAnalysis = {
       unit: 'slices',
       preparation: 'toasted',
       confidence: 'high',
+      estimatedGrams: 80,
     },
   ],
   overallConfidence: 'medium',
@@ -34,6 +35,7 @@ describe('model response parsing', () => {
     );
     expect(direct.dishName).toBe('Mushroom toast');
     expect(direct.ingredients[0]?.id).toBeTruthy();
+    expect(direct.ingredients[0]?.estimatedGrams).toBe(80);
     expect(fenced.classification).toBe('meal');
   });
 

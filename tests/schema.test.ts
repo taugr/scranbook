@@ -42,4 +42,26 @@ describe('Scranbook schemas', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('migrates entries created before local nutrition was added', () => {
+    const entry = createBlankEntry();
+    const legacy = {
+      ...entry,
+      ingredients: [
+        {
+          id: crypto.randomUUID(),
+          name: 'rice',
+          amount: 100,
+          unit: 'g',
+          preparation: null,
+          confidence: 'medium',
+        },
+      ],
+    };
+    delete (legacy as Partial<typeof legacy>).nutrition;
+    const parsed = mealEntrySchema.parse(legacy);
+    expect(parsed.nutrition).toBeNull();
+    expect(parsed.ingredients[0]?.estimatedGrams).toBeNull();
+    expect(parsed.ingredients[0]?.nutritionMatch).toBeNull();
+  });
 });

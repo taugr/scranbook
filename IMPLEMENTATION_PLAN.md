@@ -1,6 +1,6 @@
 # Scranbook Implementation Plan
 
-Status: implemented, verified, and deployed
+Status: nutrition extension implemented, verified, and deployed
 Last updated: 2026-07-12
 
 ## 1. Product goal
@@ -24,8 +24,9 @@ model is configured or the model is unavailable.
   as fully offline.
 - AI results are suggestions. Every inferred field is editable before and after
   saving, and uncertain fields are visibly marked.
-- The first release estimates ingredients and portions, not calories, macros,
-  allergies, or medical suitability.
+- Nutrition is calculated locally from bundled official food-composition data;
+  the model estimates ingredients and consumed gram weights but does not invent
+  calorie or macro values.
 - The installed app can browse, add, edit, export, and delete diary entries
   offline. AI analysis requires a reachable model endpoint.
 
@@ -76,6 +77,8 @@ Suggested stores:
 - `servings`: optional estimated number of servings
 - `portionSummary`: editable plain-language estimate
 - `ingredients`: ordered ingredient estimates
+- `nutrition`: editable totals, source matches, confidence, calculation version,
+  and estimate notes
 - `photoId`: reference to the processed image
 - `analysis`: model name, endpoint origin, prompt/schema version, confidence,
   and analysis timestamp; never an API key
@@ -415,6 +418,8 @@ live production AI is not a release gate.
   `google/gemma-4-e4b`, edit the returned ingredients and portions, and save the
   accepted result.
 - A recipe-card photo is not silently presented as the consumed portion.
+- Consumed meals can calculate editable calories and macros from bundled local
+  data, including while offline, without a nutrition API.
 - Reloading or going offline retains diary entries and processed images.
 - No diary or photo request is sent to Scranbook's Cloudflare Worker.
 - The UI clearly identifies when a model endpoint will receive a photo.
@@ -435,16 +440,33 @@ live production AI is not a release gate.
   `pnpm test && pnpm typecheck && pnpm lint && pnpm format`
 - Workers Builds deploy command: `pnpm cloudflare:deploy`
 - Local model used for release testing: `google/gemma-4-e4b` through LM Studio
-- Release verification: 14 unit tests and 13 browser tests passed; OpenNext
-  preview and the production custom domain returned the expected application,
-  PWA metadata, and security headers.
+- Nutrition data: 8,672 records from pinned USDA Foundation Foods, FNDDS, and UK
+  CoFID releases; deterministic generated index size 1.7 MB.
+- Release verification: 19 unit tests and 16 default browser tests passed,
+  including nutrition accessibility, legacy migration, recipe-card safeguards,
+  and offline recalculation. The real LM Studio browser test also passed with
+  `google/gemma-4-e4b`; OpenNext preview served the application and complete
+  local nutrition index successfully.
 
-## 16. Deferred work
+## 16. Local nutrition extension
 
-- Calories, macro- and micronutrients, allergens, or medical guidance.
+- Bundle normalized USDA FoodData Central Foundation Foods and FNDDS data plus
+  UK CoFID; do not make runtime nutrition API requests.
+- Ask the vision model for a separate consumed gram estimate per ingredient.
+- Match foods and calculate energy, protein, carbohydrate, fat, fibre, and salt
+  deterministically in the browser.
+- Store the source record and confidence for every ingredient match.
+- Keep nutrition totals editable and visibly labelled as rough estimates.
+- Do not calculate nutrition automatically for recipe cards or unclear images.
+- Preserve legacy entries and archives by defaulting missing nutrition fields.
+
+## 17. Deferred work
+
+- Micronutrient detail, allergens, or medical guidance.
 - Accounts, cross-device sync, sharing, social features, or server backups.
 - On-device WebGPU inference bundled into the PWA.
-- Barcode databases, nutrition-provider integrations, or restaurant menus.
+- Barcode databases, external nutrition-provider integrations, or restaurant
+  menus.
 - Multi-photo or video analysis.
 - Native iOS or Android applications.
 - Automated meal scoring, targets, streaks, or weight-loss features.

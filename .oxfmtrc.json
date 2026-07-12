@@ -5,7 +5,8 @@
     ".open-next",
     "next-env.d.ts",
     "node_modules",
-    "pnpm-lock.yaml"
+    "pnpm-lock.yaml",
+    "public/nutrition/foods.json"
   ],
   "quoteProps": "as-needed",
   "singleQuote": true,

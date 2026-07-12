@@ -86,13 +86,14 @@ pnpm cloudflare:preview
 pnpm cloudflare:deploy
 ```
 
-`test:live` is opt-in and never runs in CI. It defaults to the local recipe-card fixture path recorded
-in the [product specification](./docs/product-spec.md), resizes the image before inference, and prints
-validated output plus latency without logging image bytes or credentials.
+`test:live` is opt-in and never runs in CI. Pass a local image with `--image` or set
+`SCRANBOOK_TEST_IMAGE`; the command resizes it before inference and prints validated output plus
+latency without logging image bytes or credentials.
 
 `nutrition:data` reproducibly downloads the pinned USDA FoodData Central and UK CoFID releases and
 rebuilds the committed browser index. Production never downloads those upstream datasets or calls a
-nutrition API at runtime. See [docs/nutrition-data.md](./docs/nutrition-data.md).
+nutrition API at runtime. See [docs/nutrition-data.md](./docs/nutrition-data.md) and
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).
 
 ## Privacy
 
@@ -108,7 +109,7 @@ Production is served from `https://scranbook.labs.tau.gr` using Cloudflare Worke
 Static asset requests are served without invoking Worker code. The production build contains no AI
 key or AI proxy; a model is configured locally by each browser.
 
-Cloudflare Workers Builds should connect to the private `taugr/scranbook` repository:
+Cloudflare Workers Builds should connect to the `taugr/scranbook` repository:
 
 - Production branch: `main`
 - Root directory: `/`

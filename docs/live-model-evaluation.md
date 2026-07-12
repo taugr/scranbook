@@ -4,7 +4,7 @@
 
 - Endpoint: `http://127.0.0.1:1234/v1`
 - Model: `google/gemma-4-e4b`
-- Fixture: `IMG_20210703_184219.jpg` from the local recipe-generation project
+- Fixture: a local phone photo of a printed recipe card, not committed to the repository
 - Preprocessing: orientation correction, maximum 768 px, JPEG quality 80
 - Response mode: strict JSON Schema
 - Validated nutrition-contract latency: 15.85 seconds

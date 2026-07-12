@@ -1,8 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const liveEnabled = process.env.SCRANBOOK_LIVE_MODEL === '1';
-const fixture =
-  '/Users/tomauger/projects/recipe-generation/recipes/IMG_20210703_184219.jpg';
+const fixture = process.env.SCRANBOOK_TEST_IMAGE ?? '';
 
 test('analyses the recipe-card fixture through browser-direct LM Studio', async ({
   page,
@@ -10,6 +9,10 @@ test('analyses the recipe-card fixture through browser-direct LM Studio', async 
   test.skip(
     !liveEnabled,
     'Set SCRANBOOK_LIVE_MODEL=1 for the opt-in local model test.',
+  );
+  test.skip(
+    !fixture,
+    'Set SCRANBOOK_TEST_IMAGE to a local meal or recipe-card photo.',
   );
   test.skip(
     testInfo.project.name !== 'mobile',

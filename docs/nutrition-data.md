@@ -16,6 +16,9 @@ records from:
 - McCance and Widdowson's UK Composition of Foods Integrated Dataset (CoFID),
   release 2021. Reused under the Open Government Licence v3.0.
 
+Contains public sector information licensed under the Open Government Licence
+v3.0.
+
 Source pages:
 
 - <https://fdc.nal.usda.gov/download-datasets/>

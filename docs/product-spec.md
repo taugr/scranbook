@@ -32,8 +32,8 @@ model is configured or the model is unavailable.
 
 ## 3. Technical direction
 
-Follow the structure and operating conventions of
-`/Users/tomauger/projects/ayeride`:
+The initial implementation followed the established structure and operating
+conventions of the AyeRide project:
 
 - Next.js App Router, React, and TypeScript.
 - pnpm with a single-package workspace.
@@ -209,12 +209,10 @@ It should:
 5. Report qualitative errors rather than treating one expected ingredient list
    as exact ground truth.
 
-The local folder `/Users/tomauger/projects/recipe-generation/recipes` may be
-used by an opt-in evaluation command. It must not be imported wholesale into
-the repository or used as the only test corpus. In particular,
-`IMG_20210703_184219.jpg` is a phone photo of a printed recipe card and should
-verify classification and uncertainty handling rather than ordinary meal-photo
-recognition.
+A local folder of phone-camera food photos may be used by opt-in evaluation
+commands. It must not be imported wholesale into the repository or used as the
+only test corpus. A printed recipe-card photo should verify classification and
+uncertainty handling rather than ordinary meal-photo recognition.
 
 ## 7. User experience
 
@@ -306,7 +304,8 @@ Create a friendly, comforting, humanist culinary style:
 
 - Primary mobile viewport around 390 by 844.
 - At least one narrower phone and one modern desktop viewport.
-- Camera/gallery file selection using committed, small, purpose-built fixtures.
+- Camera/gallery file selection using generated fixtures or explicitly supplied
+  local photos that are not committed to the repository.
 - Mocked model success, uncertainty, timeout, CORS-like failure, and malformed
   output.
 - Reload persistence, offline diary use, service-worker registration, manifest,
@@ -402,11 +401,10 @@ section 17 rather than being added to this historical delivery sequence.
 ### Phase 5: Release
 
 - Pass the complete quality gate and Cloudflare preview.
-- Create the private GitHub repository `taugr/scranbook`.
+- Create the GitHub repository `taugr/scranbook`.
 - Commit using conventional commit messages and push `main`.
 - Deploy the `scranbook` Worker and bind `scranbook.labs.tau.gr`.
-- Configure Cloudflare Workers Builds from the private GitHub repository, like
-  AyeRide.
+- Configure Cloudflare Workers Builds from the GitHub repository.
 - Verify the live shell, PWA metadata, mobile/desktop layouts, local diary,
   offline behaviour, data deletion, and graceful no-model state.
 
@@ -430,12 +428,12 @@ live production AI is not a release gate.
 - Users can delete individual entries, all diary data, and credentials.
 - The app is usable at phone and desktop sizes and is installable as a PWA.
 - Unit, browser, build, and Cloudflare preview gates pass.
-- The private GitHub repository is pushed and `scranbook.labs.tau.gr` serves the
-  verified application shell.
+- The GitHub repository is pushed and `scranbook.labs.tau.gr` serves the verified
+  application shell.
 
 ## 15. Current release configuration
 
-- Private source: `https://github.com/taugr/scranbook`
+- Source: `https://github.com/taugr/scranbook`
 - Production: `https://scranbook.labs.tau.gr`
 - Cloudflare static-assets project: `scranbook`
 - Production branch: `main`

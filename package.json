@@ -1,7 +1,7 @@
 {
   "name": "scranbook",
   "version": "0.1.0",
-  "description": "A private, local-first food diary with configurable vision AI.",
+  "description": "A local-first food diary with configurable vision AI.",
   "keywords": [
     "cloudflare-workers",
     "food-diary",

@@ -1,8 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const captureEnabled = process.env.SCRANBOOK_CAPTURE === '1';
-const fixture =
-  '/Users/tomauger/projects/recipe-generation/recipes/IMG_20210703_184219.jpg';
+const fixture = process.env.SCRANBOOK_TEST_IMAGE ?? '';
 const result = {
   classification: 'recipe_card',
   dishName: 'Smoky chilli con carne with rice',
@@ -46,6 +45,10 @@ test('captures the visual review surfaces', async ({ page }, testInfo) => {
   test.skip(
     !captureEnabled,
     'Set SCRANBOOK_CAPTURE=1 to create review captures.',
+  );
+  test.skip(
+    !fixture,
+    'Set SCRANBOOK_TEST_IMAGE to a local meal or recipe-card photo.',
   );
   test.skip(
     testInfo.project.name === 'narrow-mobile',

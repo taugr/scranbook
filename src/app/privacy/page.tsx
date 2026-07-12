@@ -48,6 +48,13 @@ export default function PrivacyPage() {
         . The matching and arithmetic happen in this browser and remain
         available offline.
       </p>
+      <p>
+        Contains public sector information licensed under the{' '}
+        <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/">
+          Open Government Licence v3.0
+        </a>
+        .
+      </p>
       <h2>Important limits</h2>
       <p>
         Ingredient recognition, portion weights, database matches, and

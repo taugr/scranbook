@@ -7,9 +7,6 @@ import {
   parseAnalysisResponse,
 } from '../src/lib/provider';
 
-const defaultImage =
-  '/Users/tomauger/projects/recipe-generation/recipes/IMG_20210703_184219.jpg';
-
 function argument(name: string) {
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -20,7 +17,13 @@ const baseUrl = (argument('--base-url') ?? 'http://127.0.0.1:1234/v1').replace(
   '',
 );
 const model = argument('--model') ?? 'google/gemma-4-e4b';
-const imagePath = resolve(argument('--image') ?? defaultImage);
+const imageArgument = argument('--image') ?? process.env.SCRANBOOK_TEST_IMAGE;
+if (!imageArgument) {
+  throw new Error(
+    'Provide a meal photo with --image /path/to/photo.jpg or SCRANBOOK_TEST_IMAGE.',
+  );
+}
+const imagePath = resolve(imageArgument);
 
 const modelsResponse = await fetch(`${baseUrl}/models`);
 if (!modelsResponse.ok)

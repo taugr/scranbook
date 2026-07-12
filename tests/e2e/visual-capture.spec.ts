@@ -30,6 +30,18 @@ const result = {
   uncertaintyNotes: ['Recipe quantities do not show what was consumed.'],
 };
 
+async function startFirstMeal(page: import('@playwright/test').Page) {
+  const mobileAdd = page.getByRole('button', { name: 'Add', exact: true });
+  if (await mobileAdd.isVisible()) {
+    await mobileAdd.click();
+    return;
+  }
+  await page
+    .getByRole('main')
+    .getByRole('button', { name: 'Add your first meal' })
+    .click();
+}
+
 test('captures the visual review surfaces', async ({ page }, testInfo) => {
   test.skip(
     !captureEnabled,
@@ -55,10 +67,7 @@ test('captures the visual review surfaces', async ({ page }, testInfo) => {
       }),
     });
   });
-  await page
-    .getByRole('main')
-    .getByRole('button', { name: 'Add your first meal' })
-    .click();
+  await startFirstMeal(page);
   await page.locator('input[type="file"]').first().setInputFiles(fixture);
   await page.getByLabel(/I understand this photo goes directly/).check();
   await page.getByRole('button', { name: 'Analyse photo' }).click();

@@ -43,6 +43,18 @@ async function clearBrowserData(page: import('@playwright/test').Page) {
   await page.reload();
 }
 
+async function startFirstMeal(page: import('@playwright/test').Page) {
+  const mobileAdd = page.getByRole('button', { name: 'Add', exact: true });
+  if (await mobileAdd.isVisible()) {
+    await mobileAdd.click();
+    return;
+  }
+  await page
+    .getByRole('main')
+    .getByRole('button', { name: 'Add your first meal' })
+    .click();
+}
+
 test.beforeEach(async ({ page }) => {
   await clearBrowserData(page);
 });
@@ -53,10 +65,7 @@ test('creates and retains a manual diary entry', async ({ page }) => {
       name: 'Remember the meals that made your day.',
     }),
   ).toBeVisible();
-  await page
-    .getByRole('main')
-    .getByRole('button', { name: 'Add your first meal' })
-    .click();
+  await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Mushroom toast');
   await page.getByLabel('Portion').fill('Two slices with mushrooms');
   await page.getByRole('button', { name: 'Add ingredient' }).click();
@@ -99,10 +108,7 @@ test('analyses a selected image through a mocked compatible endpoint', async ({
       }),
     });
   });
-  await page
-    .getByRole('main')
-    .getByRole('button', { name: 'Add your first meal' })
-    .click();
+  await startFirstMeal(page);
   await page
     .locator('input[type="file"]')
     .first()
@@ -146,10 +152,7 @@ test('does not treat recipe quantities as a consumed nutrition estimate', async 
       }),
     });
   });
-  await page
-    .getByRole('main')
-    .getByRole('button', { name: 'Add your first meal' })
-    .click();
+  await startFirstMeal(page);
   await page
     .locator('input[type="file"]')
     .first()
@@ -164,13 +167,33 @@ test('does not treat recipe quantities as a consumed nutrition estimate', async 
   ).toBeVisible();
 });
 
-test('tests model discovery and exposes privacy controls', async ({ page }) => {
+test('tests model discovery and exposes privacy controls', async ({
+  page,
+}, testInfo) => {
   await page.route('**/v1/models', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({ data: [{ id: 'google/gemma-4-e4b' }] }),
     });
   });
+  if (testInfo.project.name === 'desktop') {
+    await expect(
+      page.getByRole('button', { name: 'Add your first meal' }),
+    ).toHaveCount(1);
+    await expect(
+      page.getByRole('button', { name: 'Add', exact: true }),
+    ).toHaveCount(0);
+  } else {
+    await expect(
+      page.getByRole('button', { name: 'Add your first meal' }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'Add', exact: true }),
+    ).toHaveCount(1);
+  }
+  await expect(
+    page.getByRole('button', { name: 'Add a meal', exact: true }),
+  ).toHaveCount(0);
   await page
     .getByRole('button', { name: /Settings/ })
     .last()
@@ -188,6 +211,28 @@ test('tests model discovery and exposes privacy controls', async ({ page }) => {
   await expect(
     page.getByRole('button', { name: 'Delete entire diary' }),
   ).toBeVisible();
+  await page.getByRole('button', { name: 'Back to diary' }).click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Remember the meals that made your day.',
+    }),
+  ).toBeVisible();
+});
+
+test('returns from settings to an in-progress meal', async ({ page }) => {
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Unfinished supper');
+  await page
+    .getByRole('button', { name: /Settings/ })
+    .last()
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Settings & privacy' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Back to meal editor' }).click();
+  await expect(page.getByLabel('What was it?')).toHaveValue(
+    'Unfinished supper',
+  );
 });
 
 test('has an installable manifest and no serious accessibility violations', async ({
@@ -208,10 +253,7 @@ test('has an installable manifest and no serious accessibility violations', asyn
   };
   expect(nutritionPayload.version).toContain('cofid-2021');
   expect(nutritionPayload.foods.length).toBeGreaterThan(8_000);
-  await page
-    .getByRole('main')
-    .getByRole('button', { name: 'Add your first meal' })
-    .click();
+  await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Accessible tomato salad');
   await page.getByRole('button', { name: 'Add ingredient' }).click();
   await page
@@ -251,10 +293,7 @@ test('keeps the diary available offline', async ({
     testInfo.project.name !== 'mobile',
     'One browser is enough for the offline lifecycle.',
   );
-  await page
-    .getByRole('main')
-    .getByRole('button', { name: 'Add your first meal' })
-    .click();
+  await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Offline soup');
   await page.getByRole('button', { name: 'Add ingredient' }).click();
   await page

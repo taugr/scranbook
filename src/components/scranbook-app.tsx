@@ -64,6 +64,7 @@ import {
 } from '@/lib/schema';
 
 type Screen = 'diary' | 'add' | 'settings';
+type ContentScreen = Exclude<Screen, 'settings'>;
 
 const mealLabels: Record<MealEntry['mealType'], string> = {
   breakfast: 'Breakfast',
@@ -158,6 +159,8 @@ function ConfidenceDot({ value }: { value: Ingredient['confidence'] }) {
 
 export function ScranbookApp() {
   const [screen, setScreen] = useState<Screen>('diary');
+  const [settingsReturnScreen, setSettingsReturnScreen] =
+    useState<ContentScreen>('diary');
   const [entries, setEntries] = useState<MealEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<MealEntry>(() => createBlankEntry());
@@ -239,6 +242,11 @@ export function ScranbookApp() {
     setDraft(createBlankEntry());
     setPendingPhoto(null);
     setScreen('add');
+  }
+
+  function openSettings() {
+    if (screen !== 'settings') setSettingsReturnScreen(screen);
+    setScreen('settings');
   }
 
   async function startEdit(entry: MealEntry, duplicate = false) {
@@ -630,12 +638,14 @@ export function ScranbookApp() {
             <WifiOff /> Offline
           </span>
         )}
-        <button
-          className="desktop-add button button--primary"
-          onClick={startAdd}
-        >
-          <Camera /> Add a meal
-        </button>
+        {entries.length > 0 && (
+          <button
+            className="desktop-add button button--primary"
+            onClick={startAdd}
+          >
+            <Camera /> Add a meal
+          </button>
+        )}
       </header>
 
       {(error || notice) && (
@@ -663,18 +673,10 @@ export function ScranbookApp() {
               <p className="eyebrow">The recent pages</p>
               <h2>Your diary</h2>
             </div>
-            <button
-              className="icon-button"
-              onClick={startAdd}
-              aria-label="Add a meal"
-            >
-              <Plus />
-            </button>
           </div>
           {entries.length === 0 ? (
             <div className="rail-empty">
               <span>Nothing tucked in yet.</span>
-              <button onClick={startAdd}>Add your first meal</button>
             </div>
           ) : (
             <div className="rail-list">
@@ -699,10 +701,7 @@ export function ScranbookApp() {
               ))}
             </div>
           )}
-          <button
-            className="rail-settings"
-            onClick={() => setScreen('settings')}
-          >
+          <button className="rail-settings" onClick={openSettings}>
             <Settings /> Settings & privacy
           </button>
         </aside>
@@ -744,7 +743,7 @@ export function ScranbookApp() {
               onCalculateNutrition={() => void calculateDraftNutrition()}
               onNutritionChange={updateNutrition}
               onSave={() => void saveDraft()}
-              onOpenSettings={() => setScreen('settings')}
+              onOpenSettings={openSettings}
             />
           )}
           {screen === 'settings' && (
@@ -754,6 +753,8 @@ export function ScranbookApp() {
               storage={storage}
               entryCount={entries.length}
               connectionStatus={connectionStatus}
+              returnScreen={settingsReturnScreen}
+              onClose={() => setScreen(settingsReturnScreen)}
               onSettingsChange={setModelSettings}
               onHeaderJsonChange={setHeaderJson}
               onSave={() => void saveSettings()}
@@ -782,7 +783,7 @@ export function ScranbookApp() {
         </button>
         <button
           className={screen === 'settings' ? 'active' : ''}
-          onClick={() => setScreen('settings')}
+          onClick={openSettings}
         >
           <Settings />
           <span>Settings</span>
@@ -1478,6 +1479,8 @@ function SettingsPanel({
   storage,
   entryCount,
   connectionStatus,
+  returnScreen,
+  onClose,
   onSettingsChange,
   onHeaderJsonChange,
   onSave,
@@ -1493,6 +1496,8 @@ function SettingsPanel({
   storage: StorageEstimate | null;
   entryCount: number;
   connectionStatus: string | null;
+  returnScreen: ContentScreen;
+  onClose: () => void;
   onSettingsChange: (settings: ModelSettings) => void;
   onHeaderJsonChange: (value: string) => void;
   onSave: () => void;
@@ -1506,6 +1511,15 @@ function SettingsPanel({
   return (
     <section className="settings-page">
       <div className="stage-heading">
+        <button
+          className="back-button"
+          onClick={onClose}
+          aria-label={
+            returnScreen === 'add' ? 'Back to meal editor' : 'Back to diary'
+          }
+        >
+          <ChevronLeft /> Back
+        </button>
         <div>
           <p className="eyebrow">Kept on this device</p>
           <h1>Settings & privacy</h1>

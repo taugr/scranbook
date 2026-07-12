@@ -334,15 +334,6 @@ a:focus-visible {
   color: var(--muted);
   text-align: center;
 }
-.rail-empty button {
-  display: block;
-  border: 0;
-  background: transparent;
-  margin: 9px auto 0;
-  color: var(--tomato-dark);
-  font-weight: 900;
-  cursor: pointer;
-}
 .rail-settings {
   margin-top: auto;
   min-height: 46px;
@@ -1209,6 +1200,9 @@ code {
   }
   .empty-diary > p:not(.eyebrow) {
     font-size: 1rem;
+  }
+  .empty-diary > .button {
+    display: none;
   }
   .empty-illustration {
     width: 145px;

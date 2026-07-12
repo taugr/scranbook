@@ -464,6 +464,10 @@ live production AI is not a release gate.
 - Live checks returned `200` for `/`, `/privacy/`, and the 1.7 MB bundled
   nutrition index, with the expected CSP and security headers. The migration
   gate passed 19 unit tests and 16 default browser tests.
+- The active Cloudflare Configuration Rule `Disable RUM on Scranbook` matches
+  only `scranbook.labs.tau.gr` and disables Real User Monitoring. This prevents
+  Cloudflare's automatic Web Analytics beacon injection without weakening the
+  CSP or changing analytics behavior for other `tau.gr` sites.
 
 ## 16. Local nutrition extension
 

@@ -87,7 +87,7 @@ pnpm cloudflare:deploy
 ```
 
 `test:live` is opt-in and never runs in CI. It defaults to the local recipe-card fixture path recorded
-in [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md), resizes the image before inference, and prints
+in the [product specification](./docs/product-spec.md), resizes the image before inference, and prints
 validated output plus latency without logging image bytes or credentials.
 
 `nutrition:data` reproducibly downloads the pinned USDA FoodData Central and UK CoFID releases and
@@ -126,6 +126,7 @@ tests/                   Vitest coverage
 tests/e2e/               Playwright mobile, desktop, PWA, and accessibility coverage
 scripts/                 setup, dataset generation, and opt-in live-model evaluation
 public/                  PWA assets and the bundled local nutrition index
+docs/                    product specification and supporting technical notes
 ```
 
 ## Quality gate

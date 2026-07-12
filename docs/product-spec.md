@@ -1,6 +1,6 @@
-# Scranbook Implementation Plan
+# Scranbook Product and Architecture Specification
 
-Status: nutrition extension and static-asset deployment verified and deployed
+Status: MVP implemented and deployed; maintained as the product decision record
 Last updated: 2026-07-12
 
 ## 1. Product goal
@@ -367,7 +367,10 @@ pnpm test:e2e
 pnpm run cloudflare:preview
 ```
 
-## 13. Delivery phases
+## 13. MVP delivery record
+
+The initial release completed the following phases. Future work belongs in
+section 17 rather than being added to this historical delivery sequence.
 
 ### Phase 1: Scaffold and specification
 
@@ -430,7 +433,7 @@ live production AI is not a release gate.
 - The private GitHub repository is pushed and `scranbook.labs.tau.gr` serves the
   verified application shell.
 
-## 15. Release record
+## 15. Current release configuration
 
 - Private source: `https://github.com/taugr/scranbook`
 - Production: `https://scranbook.labs.tau.gr`
@@ -442,11 +445,8 @@ live production AI is not a release gate.
 - Local model used for release testing: `google/gemma-4-e4b` through LM Studio
 - Nutrition data: 8,672 records from pinned USDA Foundation Foods, FNDDS, and UK
   CoFID releases; deterministic generated index size 1.7 MB.
-- Original release verification: 19 unit tests and 16 default browser tests passed,
-  including nutrition accessibility, legacy migration, recipe-card safeguards,
-  and offline recalculation. The real LM Studio browser test also passed with
-  `google/gemma-4-e4b`; the preview served the application and complete
-  local nutrition index successfully.
+- The quality gate covers unit tests, type checking, linting, formatting, the
+  production build, and browser tests. Live-model evaluation remains opt-in.
 
 ### Static-asset deployment migration
 
@@ -458,12 +458,10 @@ live production AI is not a release gate.
 - Trailing-slash routing makes static pages such as `/privacy/` explicit and
   keeps the service-worker shell cache aligned with deployed paths.
 - OpenNext and its Cloudflare runtime dependency were removed.
-- Static deployment version `a2ac6a39-69ff-45c4-93cc-e3570944ce35` was
-  published on 2026-07-12. Cloudflare reports direct asset serving, no Worker
-  handlers, no bindings, and `run_worker_first: false`.
+- Cloudflare reports direct asset serving, no Worker handlers, no bindings, and
+  `run_worker_first: false`.
 - Live checks returned `200` for `/`, `/privacy/`, and the 1.7 MB bundled
-  nutrition index, with the expected CSP and security headers. The migration
-  gate passed 19 unit tests and 16 default browser tests.
+  nutrition index, with the expected CSP and security headers.
 - The active Cloudflare Configuration Rule `Disable RUM on Scranbook` matches
   only `scranbook.labs.tau.gr` and disables Real User Monitoring. This prevents
   Cloudflare's automatic Web Analytics beacon injection without weakening the

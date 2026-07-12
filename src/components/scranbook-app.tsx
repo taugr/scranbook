@@ -940,9 +940,6 @@ function NutritionSummary({
           <p className="eyebrow">Local food data</p>
           <h2 id="nutrition-heading">Estimated nutrition</h2>
         </div>
-        <span className="local-label">
-          <Database /> No nutrition API
-        </span>
       </div>
       <div className="nutrition-facts">
         <div className="nutrition-energy">

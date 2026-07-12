@@ -517,17 +517,6 @@ a:focus-visible {
   padding: 28px;
   border-top: 4px solid var(--sage);
 }
-.local-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  color: #41523b;
-  background: var(--sage-light);
-  font-size: 0.72rem;
-  font-weight: 900;
-}
 .nutrition-facts {
   display: grid;
   grid-template-columns: 145px 1fr;

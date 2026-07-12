@@ -4,7 +4,7 @@
   <img src="./public/icon.svg" alt="Scranbook app icon" width="140" />
   <br />
   <a href="https://scranbook.labs.tau.gr">
-    <img src="https://img.shields.io/badge/live-Cloudflare%20Workers-f59e0b" alt="live app" />
+    <img src="https://img.shields.io/badge/live-Cloudflare%20Static%20Assets-f59e0b" alt="live app" />
   </a>
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license" />
   <img src="https://img.shields.io/badge/PWA-local--first-718067" alt="local-first PWA" />
@@ -14,9 +14,9 @@
 
 ## Overview
 
-Scranbook is a mobile-first Next.js PWA deployed on Cloudflare Workers through OpenNext. Meal
-entries and processed photos live in IndexedDB on the user's device. There are no accounts,
-analytics, or server-side diary APIs.
+Scranbook is a mobile-first Next.js PWA exported as static files and deployed with Cloudflare
+Workers Static Assets. Meal entries and processed photos live in IndexedDB on the user's device.
+There are no accounts, analytics, Worker code, or server-side diary APIs.
 
 When the user explicitly chooses to analyse a photo, the browser sends it directly to their
 configured OpenAI-compatible endpoint. LM Studio with `google/gemma-4-e4b` is the default local
@@ -104,8 +104,9 @@ See the in-app `/privacy` page and [SECURITY.md](./SECURITY.md).
 
 ## Deployment
 
-Production is served from `https://scranbook.labs.tau.gr` using Cloudflare Workers and OpenNext.
-The production build contains no AI key or AI proxy. A model is configured locally by each browser.
+Production is served from `https://scranbook.labs.tau.gr` using Cloudflare Workers Static Assets.
+Static asset requests are served without invoking Worker code. The production build contains no AI
+key or AI proxy; a model is configured locally by each browser.
 
 Cloudflare Workers Builds should connect to the private `taugr/scranbook` repository:
 
@@ -113,6 +114,7 @@ Cloudflare Workers Builds should connect to the private `taugr/scranbook` reposi
 - Root directory: `/`
 - Build command: `pnpm test && pnpm typecheck && pnpm lint && pnpm format`
 - Deploy command: `pnpm cloudflare:deploy`
+- Build output: `out`
 
 ## Project structure
 

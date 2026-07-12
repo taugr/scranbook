@@ -1,7 +1,7 @@
-const CACHE_NAME = 'scranbook-shell-v2';
+const CACHE_NAME = 'scranbook-shell-v3';
 const SHELL = [
   '/',
-  '/privacy',
+  '/privacy/',
   '/manifest.webmanifest',
   '/icon.svg',
   '/nutrition/foods.json',

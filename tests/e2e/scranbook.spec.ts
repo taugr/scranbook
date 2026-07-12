@@ -184,7 +184,7 @@ test('tests model discovery and exposes privacy controls', async ({ page }) => {
   ).toBeVisible();
   await expect(
     page.getByRole('link', { name: /plain-language privacy note/ }),
-  ).toHaveAttribute('href', '/privacy');
+  ).toHaveAttribute('href', '/privacy/');
   await expect(
     page.getByRole('button', { name: 'Delete entire diary' }),
   ).toBeVisible();

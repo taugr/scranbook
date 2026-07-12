@@ -27,11 +27,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cloudflare:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "cloudflare:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "start": "wrangler dev --port 3000",
+    "preview": "pnpm build && wrangler dev",
+    "deploy": "pnpm build && wrangler deploy",
+    "cloudflare:preview": "pnpm preview",
+    "cloudflare:deploy": "pnpm deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -45,7 +45,6 @@
     "prepare": "node scripts/prepare.mjs"
   },
   "dependencies": {
-    "@opennextjs/cloudflare": "1.20.0",
     "idb": "^8.0.3",
     "jszip": "^3.10.1",
     "lucide-react": "^1.24.0",

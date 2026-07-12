@@ -1,9 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "scranbook",
-  "main": ".open-next/worker.js",
-  "compatibility_date": "2026-07-11",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2026-07-12",
   "workers_dev": true,
   "routes": [
     {
@@ -11,11 +9,9 @@
       "custom_domain": true,
     },
   ],
-  "observability": {
-    "enabled": true,
-  },
   "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS",
+    "directory": "./out",
+    "html_handling": "force-trailing-slash",
+    "not_found_handling": "404-page",
   },
 }

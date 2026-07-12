@@ -1,6 +1,6 @@
 # Scranbook Implementation Plan
 
-Status: nutrition extension implemented, verified, and deployed
+Status: nutrition extension and static-asset deployment verified and deployed
 Last updated: 2026-07-12
 
 ## 1. Product goal
@@ -37,7 +37,7 @@ Follow the structure and operating conventions of
 
 - Next.js App Router, React, and TypeScript.
 - pnpm with a single-package workspace.
-- Cloudflare Workers deployment through `@opennextjs/cloudflare`.
+- Next.js static export deployed through Cloudflare Workers Static Assets.
 - Vitest for unit and integration tests.
 - Playwright for mobile, desktop, offline, and PWA browser coverage.
 - oxlint and oxfmt for linting and formatting.
@@ -53,10 +53,10 @@ Apply the `typescript-project-scaffold` workflow where appropriate:
 - Explicit pnpm supply-chain policy, including the one-day release-age gate.
 - Typecheck, test, lint, format, build, and browser-test scripts.
 
-Scranbook will not initially expose application API routes. Cloudflare serves
-the app shell and assets; diary operations and model requests happen in the
-browser. This keeps meal data out of the Worker and leaves room to add server
-features later without changing frameworks.
+Scranbook does not expose application API routes or Worker code. Cloudflare
+serves the exported app shell and assets directly; diary operations and model
+requests happen in the browser. A future server feature would require revisiting
+the static-export boundary.
 
 ## 4. Local data architecture
 
@@ -372,7 +372,7 @@ pnpm run cloudflare:preview
 ### Phase 1: Scaffold and specification
 
 - Create the Next.js/TypeScript project and apply the TypeScript scaffold.
-- Add package policy, CI, documentation, tests, and Cloudflare/OpenNext config.
+- Add package policy, CI, documentation, tests, and Cloudflare deployment config.
 - Commit the domain schema and privacy/model contracts.
 
 ### Phase 2: Local diary foundation
@@ -421,7 +421,7 @@ live production AI is not a release gate.
 - Consumed meals can calculate editable calories and macros from bundled local
   data, including while offline, without a nutrition API.
 - Reloading or going offline retains diary entries and processed images.
-- No diary or photo request is sent to Scranbook's Cloudflare Worker.
+- Scranbook deploys no Worker script that could receive diary or photo data.
 - The UI clearly identifies when a model endpoint will receive a photo.
 - Export/import round-trips entries and photos without exporting credentials.
 - Users can delete individual entries, all diary data, and credentials.
@@ -434,7 +434,7 @@ live production AI is not a release gate.
 
 - Private source: `https://github.com/taugr/scranbook`
 - Production: `https://scranbook.labs.tau.gr`
-- Cloudflare Worker: `scranbook`
+- Cloudflare static-assets project: `scranbook`
 - Production branch: `main`
 - Workers Builds quality gate:
   `pnpm test && pnpm typecheck && pnpm lint && pnpm format`
@@ -442,11 +442,28 @@ live production AI is not a release gate.
 - Local model used for release testing: `google/gemma-4-e4b` through LM Studio
 - Nutrition data: 8,672 records from pinned USDA Foundation Foods, FNDDS, and UK
   CoFID releases; deterministic generated index size 1.7 MB.
-- Release verification: 19 unit tests and 16 default browser tests passed,
+- Original release verification: 19 unit tests and 16 default browser tests passed,
   including nutrition accessibility, legacy migration, recipe-card safeguards,
   and offline recalculation. The real LM Studio browser test also passed with
-  `google/gemma-4-e4b`; OpenNext preview served the application and complete
+  `google/gemma-4-e4b`; the preview served the application and complete
   local nutrition index successfully.
+
+### Static-asset deployment migration
+
+- Next.js uses `output: 'export'` and writes the complete site to `out/`.
+- Wrangler uploads `out/` with no `main` Worker script, so matching requests are
+  served as free static assets without Worker invocations.
+- `public/_headers` preserves the CSP and browser security policies on the
+  exported responses.
+- Trailing-slash routing makes static pages such as `/privacy/` explicit and
+  keeps the service-worker shell cache aligned with deployed paths.
+- OpenNext and its Cloudflare runtime dependency were removed.
+- Static deployment version `a2ac6a39-69ff-45c4-93cc-e3570944ce35` was
+  published on 2026-07-12. Cloudflare reports direct asset serving, no Worker
+  handlers, no bindings, and `run_worker_first: false`.
+- Live checks returned `200` for `/`, `/privacy/`, and the 1.7 MB bundled
+  nutrition index, with the expected CSP and security headers. The migration
+  gate passed 19 unit tests and 16 default browser tests.
 
 ## 16. Local nutrition extension
 

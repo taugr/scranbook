@@ -1,12 +1,15 @@
 import {
   mealAnalysisSchema,
+  nutritionLabelAnalysisSchema,
   type MealAnalysis,
   type ModelSettings,
+  type NutritionLabelColumn,
   type StoredPhoto,
 } from './schema';
 import { blobToDataUrl } from './image';
 
 export const promptVersion = 'meal-analysis-v2';
+export const nutritionLabelPromptVersion = 'nutrition-label-analysis-v1';
 
 export type ProviderErrorCode =
   | 'aborted'
@@ -33,6 +36,13 @@ Return JSON only. Describe visible or reasonably inferable food, and separate ob
 Do not claim hidden ingredients with high confidence. For every ingredient, give the visible amount and a separate best estimate of its consumed weight in grams. Use null when a gram estimate is not defensible.
 Classify the image as meal, recipe_card, packaged_food, or unclear. Printed recipe quantities are context, not proof of what was consumed.
 Do not calculate calories, macros, or other nutritional values; those are calculated locally from food-composition data. Never provide medical, allergy, or health advice. Use low confidence and uncertainty notes when evidence is weak.`;
+
+const nutritionLabelSystemPrompt = `You transcribe visible nutrition-information panels for a private food diary.
+Return JSON only. Transcribe only facts visible in the image; never calculate consumed totals or infer missing cells.
+Identify every printed basis column and preserve its heading, serving text, nutrient names, numeric amounts, units, qualifiers, and daily-value percentages.
+Distinguish kcal from kJ and salt from sodium. Use null and low confidence for unreadable cells. Do not infer an unprinted serving size.
+Report glare, blur, cropped headings, ambiguity, or prepared/unprepared columns in warnings.
+Do not infer ingredients, allergens, health effects, suitability, package totals, or serving weights. Never provide medical advice.`;
 
 export const mealResponseJsonSchema = {
   type: 'object',
@@ -83,6 +93,99 @@ export const mealResponseJsonSchema = {
   },
 } as const;
 
+export const nutritionLabelResponseJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['productName', 'columns', 'warnings', 'overallConfidence'],
+  properties: {
+    productName: { type: 'string' },
+    columns: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'basis',
+          'basisAmount',
+          'basisUnit',
+          'printedHeading',
+          'servingDescription',
+          'servingSize',
+          'nutrients',
+        ],
+        properties: {
+          basis: { enum: ['per_100g', 'per_100ml', 'per_serving'] },
+          basisAmount: { type: 'number' },
+          basisUnit: { enum: ['g', 'ml', 'serving'] },
+          printedHeading: { type: 'string' },
+          servingDescription: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+          },
+          servingSize: {
+            anyOf: [
+              {
+                type: 'object',
+                additionalProperties: false,
+                required: ['amount', 'unit'],
+                properties: {
+                  amount: { type: 'number' },
+                  unit: { enum: ['g', 'ml'] },
+                },
+              },
+              { type: 'null' },
+            ],
+          },
+          nutrients: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: [
+                'key',
+                'printedName',
+                'amount',
+                'unit',
+                'qualifier',
+                'dailyValuePercent',
+                'confidence',
+              ],
+              properties: {
+                key: {
+                  enum: [
+                    'energy_kcal',
+                    'energy_kj',
+                    'fat',
+                    'saturates',
+                    'carbohydrate',
+                    'sugars',
+                    'fibre',
+                    'protein',
+                    'salt',
+                    'sodium',
+                    'other',
+                  ],
+                },
+                printedName: { type: 'string' },
+                amount: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+                unit: { type: 'string' },
+                qualifier: {
+                  enum: ['exact', 'less_than', 'approximately'],
+                },
+                dailyValuePercent: {
+                  anyOf: [{ type: 'number' }, { type: 'null' }],
+                },
+                confidence: { enum: ['low', 'medium', 'high'] },
+              },
+            },
+          },
+        },
+      },
+    },
+    warnings: { type: 'array', items: { type: 'string' } },
+    overallConfidence: { enum: ['low', 'medium', 'high'] },
+  },
+} as const;
+
 function endpoint(baseUrl: string, path: string) {
   return `${baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 }
@@ -121,14 +224,14 @@ function headers(settings: ModelSettings) {
   };
 }
 
-function responseFormat(settings: ModelSettings) {
+function responseFormat(settings: ModelSettings, name: string, schema: object) {
   if (settings.responseMode === 'json_schema') {
     return {
       type: 'json_schema',
       json_schema: {
-        name: 'meal_analysis',
+        name,
         strict: true,
-        schema: mealResponseJsonSchema,
+        schema,
       },
     };
   }
@@ -181,6 +284,72 @@ export function parseAnalysisResponse(value: unknown): MealAnalysis {
     ingredients: result.data.ingredients.map((ingredient) => ({
       ...ingredient,
       id: ingredient.id ?? crypto.randomUUID(),
+    })),
+  };
+}
+
+export interface ParsedNutritionLabelAnalysis {
+  productName: string;
+  columns: NutritionLabelColumn[];
+  warnings: string[];
+  overallConfidence: 'low' | 'medium' | 'high';
+}
+
+export function parseNutritionLabelResponse(
+  value: unknown,
+): ParsedNutritionLabelAnalysis {
+  if (typeof value !== 'string')
+    throw new ProviderError(
+      'invalid_response',
+      'The model returned no nutrition-label text.',
+    );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripCodeFence(value));
+  } catch {
+    const first = value.indexOf('{');
+    const last = value.lastIndexOf('}');
+    if (first < 0 || last <= first)
+      throw new ProviderError(
+        'invalid_response',
+        'The model did not return valid nutrition-label JSON.',
+      );
+    try {
+      parsed = JSON.parse(value.slice(first, last + 1));
+    } catch {
+      throw new ProviderError(
+        'invalid_response',
+        'The model did not return valid nutrition-label JSON.',
+      );
+    }
+  }
+  const result = nutritionLabelAnalysisSchema.safeParse(parsed);
+  if (
+    !result.success ||
+    result.data.columns.some(
+      (column) =>
+        !column.printedHeading.trim() ||
+        column.nutrients.some(
+          (nutrient) => !nutrient.printedName.trim() || !nutrient.unit.trim(),
+        ),
+    ) ||
+    !result.data.columns.some((column) =>
+      column.nutrients.some((nutrient) => nutrient.amount !== null),
+    )
+  )
+    throw new ProviderError(
+      'invalid_response',
+      'No usable nutrition values were found in the model result.',
+    );
+  return {
+    ...result.data,
+    columns: result.data.columns.map((column) => ({
+      ...column,
+      id: crypto.randomUUID(),
+      nutrients: column.nutrients.map((nutrient) => ({
+        ...nutrient,
+        id: crypto.randomUUID(),
+      })),
     })),
   };
 }
@@ -287,7 +456,11 @@ export async function analyseMeal(
   signal?: AbortSignal,
 ): Promise<MealAnalysis> {
   const imageUrl = await blobToDataUrl(photo.blob);
-  const format = responseFormat(settings);
+  const format = responseFormat(
+    settings,
+    'meal_analysis',
+    mealResponseJsonSchema,
+  );
   const response = await fetchWithTimeout(
     endpoint(settings.baseUrl, 'chat/completions'),
     {
@@ -321,4 +494,50 @@ export async function analyseMeal(
     choices?: Array<{ message?: { content?: unknown } }>;
   };
   return parseAnalysisResponse(data.choices?.[0]?.message?.content);
+}
+
+export async function analyseNutritionLabel(
+  photo: StoredPhoto,
+  settings: ModelSettings,
+  signal?: AbortSignal,
+): Promise<ParsedNutritionLabelAnalysis> {
+  const imageUrl = await blobToDataUrl(photo.blob);
+  const format = responseFormat(
+    settings,
+    'nutrition_label_analysis',
+    nutritionLabelResponseJsonSchema,
+  );
+  const response = await fetchWithTimeout(
+    endpoint(settings.baseUrl, 'chat/completions'),
+    {
+      method: 'POST',
+      headers: headers(settings),
+      body: JSON.stringify({
+        model: settings.model,
+        temperature: 0,
+        max_tokens: 2_400,
+        messages: [
+          { role: 'system', content: nutritionLabelSystemPrompt },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'Transcribe every visible nutrition-information column and return the requested JSON.',
+              },
+              { type: 'image_url', image_url: { url: imageUrl } },
+            ],
+          },
+        ],
+        ...(format ? { response_format: format } : {}),
+      }),
+    },
+    settings.timeoutMs,
+    signal,
+  );
+  await assertOk(response);
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+  };
+  return parseNutritionLabelResponse(data.choices?.[0]?.message?.content);
 }

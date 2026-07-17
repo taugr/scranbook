@@ -1,6 +1,7 @@
 # Nutrition Label Scanner Implementation Plan
 
-Status: planned
+Status: implemented locally; opt-in live-label quality evaluation and release
+verification remain separate release steps
 Last updated: 2026-07-18
 
 ## 1. Purpose

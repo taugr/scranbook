@@ -3,6 +3,7 @@ import {
   discoverModels,
   endpointLocation,
   parseAnalysisResponse,
+  parseNutritionLabelResponse,
   ProviderError,
   testModelConnection,
 } from '@/lib/provider';
@@ -25,6 +26,42 @@ const validAnalysis = {
   ],
   overallConfidence: 'medium',
   uncertaintyNotes: ['Oil quantity is not visible'],
+};
+
+const validLabelAnalysis = {
+  productName: 'Oat bar',
+  columns: [
+    {
+      basis: 'per_100g',
+      basisAmount: 100,
+      basisUnit: 'g',
+      printedHeading: 'Per 100 g',
+      servingDescription: 'One bar is 35 g',
+      servingSize: null,
+      nutrients: [
+        {
+          key: 'energy_kcal',
+          printedName: 'Energy',
+          amount: 240,
+          unit: 'kcal',
+          qualifier: 'exact',
+          dailyValuePercent: null,
+          confidence: 'high',
+        },
+        {
+          key: 'protein',
+          printedName: 'Protein',
+          amount: null,
+          unit: 'g',
+          qualifier: 'approximately',
+          dailyValuePercent: 12,
+          confidence: 'low',
+        },
+      ],
+    },
+  ],
+  warnings: ['Protein cell is blurred'],
+  overallConfidence: 'medium',
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -53,6 +90,39 @@ describe('model response parsing', () => {
     expect(() => parseAnalysisResponse('{"dishName":"Toast"}')).toThrow(
       'did not match the meal schema',
     );
+  });
+});
+
+describe('nutrition-label response parsing', () => {
+  it('preserves printed columns, null cells, confidence, and stable IDs', () => {
+    const result = parseNutritionLabelResponse(
+      `Result:\n\`\`\`json\n${JSON.stringify(validLabelAnalysis)}\n\`\`\``,
+    );
+    expect(result.productName).toBe('Oat bar');
+    expect(result.columns[0]?.id).toBeTruthy();
+    expect(result.columns[0]?.nutrients[1]).toMatchObject({
+      amount: null,
+      confidence: 'low',
+    });
+    expect(result.columns[0]?.nutrients[1]?.id).toBeTruthy();
+  });
+
+  it('rejects missing, negative, and malformed printed values', () => {
+    expect(() =>
+      parseNutritionLabelResponse(
+        JSON.stringify({ ...validLabelAnalysis, columns: [] }),
+      ),
+    ).toThrow('No usable nutrition values');
+    const negative = structuredClone(validLabelAnalysis);
+    negative.columns[0]!.nutrients[0]!.amount = -1;
+    expect(() => parseNutritionLabelResponse(JSON.stringify(negative))).toThrow(
+      'No usable nutrition values',
+    );
+    const missingUnit = structuredClone(validLabelAnalysis);
+    missingUnit.columns[0]!.nutrients[0]!.unit = '';
+    expect(() =>
+      parseNutritionLabelResponse(JSON.stringify(missingUnit)),
+    ).toThrow('No usable nutrition values');
   });
 });
 

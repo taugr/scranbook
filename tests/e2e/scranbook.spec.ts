@@ -28,6 +28,70 @@ const analysis = {
   uncertaintyNotes: ['The amount of oil is not visible'],
 };
 
+const labelAnalysis = {
+  productName: 'Cocoa oat bar',
+  columns: [
+    {
+      basis: 'per_100g',
+      basisAmount: 100,
+      basisUnit: 'g',
+      printedHeading: 'Per 100 g',
+      servingDescription: 'One bar is 30 g',
+      servingSize: null,
+      nutrients: [
+        {
+          key: 'energy_kcal',
+          printedName: 'Energy',
+          amount: 400,
+          unit: 'kcal',
+          qualifier: 'exact',
+          dailyValuePercent: null,
+          confidence: 'high',
+        },
+        {
+          key: 'protein',
+          printedName: 'Protein',
+          amount: 10,
+          unit: 'g',
+          qualifier: 'exact',
+          dailyValuePercent: null,
+          confidence: 'low',
+        },
+      ],
+    },
+    {
+      basis: 'per_serving',
+      basisAmount: 1,
+      basisUnit: 'serving',
+      printedHeading: 'Per bar',
+      servingDescription: '1 bar (30 g)',
+      servingSize: { amount: 30, unit: 'g' },
+      nutrients: [
+        {
+          key: 'energy_kcal',
+          printedName: 'Energy',
+          amount: 120,
+          unit: 'kcal',
+          qualifier: 'exact',
+          dailyValuePercent: null,
+          confidence: 'high',
+        },
+        {
+          key: 'other',
+          printedName: 'Iron',
+          amount: 2,
+          unit: 'mg',
+          qualifier: 'approximately',
+          dailyValuePercent: 10,
+          confidence: 'medium',
+        },
+      ],
+    },
+  ],
+  warnings: ['Check the low-confidence protein cell'],
+  overallConfidence: 'medium',
+};
+
 async function clearBrowserData(page: import('@playwright/test').Page) {
   await page.goto('/');
   await page.evaluate(async () => {
@@ -62,6 +126,27 @@ async function openSavedEntry(
   const heading = page.getByRole('heading', { name: title, exact: true });
   if (await heading.isVisible()) return;
   await page.locator('.mobile-entry').filter({ hasText: title }).click();
+}
+
+async function seriousAccessibilityViolations(
+  page: import('@playwright/test').Page,
+) {
+  await page.addScriptTag({ content: axe.source });
+  return page.evaluate(async () => {
+    const runner = (
+      window as unknown as {
+        axe: {
+          run: () => Promise<{
+            violations: Array<{ impact: string | null; id: string }>;
+          }>;
+        };
+      }
+    ).axe;
+    return (await runner.run()).violations.filter(
+      (violation) =>
+        violation.impact === 'critical' || violation.impact === 'serious',
+    );
+  });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -159,6 +244,105 @@ test('analyses a selected image through a mocked compatible endpoint', async ({
   await expect(
     page.getByRole('heading', { name: 'Tomato and herb toast' }),
   ).toBeVisible();
+});
+
+test('scans, reviews, scales, and saves a nutrition label', async ({
+  page,
+}) => {
+  await page.route('**/v1/chat/completions', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(labelAnalysis) } }],
+      }),
+    });
+  });
+  await startFirstMeal(page);
+  await page.getByRole('button', { name: 'Nutrition label' }).click();
+  await page
+    .getByLabel('Choose nutrition label photo')
+    .setInputFiles('public/icon-192.png');
+  await page.getByLabel(/I understand this label photo goes directly/).check();
+  await page
+    .getByRole('button', { name: 'Scan label with configured model' })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Check the label values' }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Product name')).toHaveValue('Cocoa oat bar');
+  await expect(
+    page.getByText(/Low confidence — compare this cell/),
+  ).toBeVisible();
+  await expect(page.getByLabel('Daily value %').first()).toBeVisible();
+  await page.getByLabel('Printed column').selectOption({ label: 'Per bar' });
+  await page.getByLabel('Amount consumed').fill('1.5');
+  await expect(page.getByText(/Consumed: 180 kcal/)).toBeVisible();
+  expect(await seriousAccessibilityViolations(page)).toEqual([]);
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Cocoa oat bar' }),
+  ).toBeVisible();
+  await expect(page.getByText('From reviewed nutrition label')).toBeVisible();
+  await expect(page.getByText(/1.5 serving using/)).toBeVisible();
+  await page.reload();
+  await openSavedEntry(page, 'Cocoa oat bar');
+  await expect(page.getByText('From reviewed nutrition label')).toBeVisible();
+});
+
+test('enters and scales a nutrition label manually without a photo', async ({
+  page,
+}) => {
+  let providerRequests = 0;
+  await page.route('**/v1/**', async (route) => {
+    providerRequests += 1;
+    await route.abort();
+  });
+  await startFirstMeal(page);
+  await page.getByRole('button', { name: 'Nutrition label' }).click();
+  await page.getByRole('button', { name: 'Enter label manually' }).click();
+  await page.getByLabel('Product name').fill('Manual cereal');
+  const nutrientRow = page.locator('.label-nutrient-row').first();
+  await nutrientRow.getByLabel('Amount').fill('360');
+  await page.getByLabel('Amount consumed').fill('50');
+  await expect(page.getByText(/Consumed: 180 kcal/)).toBeVisible();
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Manual cereal' }),
+  ).toBeVisible();
+  expect(providerRequests).toBe(0);
+});
+
+test('recovers an unfinished nutrition label draft with its photo', async ({
+  page,
+}) => {
+  await startFirstMeal(page);
+  await page.getByRole('button', { name: 'Nutrition label' }).click();
+  await page
+    .getByLabel('Choose nutrition label photo')
+    .setInputFiles('public/icon-192.png');
+  await page.getByRole('button', { name: 'Enter label manually' }).click();
+  await page.getByLabel('Product name').fill('Recoverable snack');
+  await page
+    .locator('.label-nutrient-row')
+    .first()
+    .getByLabel('Amount')
+    .fill('250');
+  await expect(page.getByText('Draft saved on this device')).toBeVisible();
+
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Continue where you left off.' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Continue draft' }).last().click();
+  await expect(page.getByLabel('Product name')).toHaveValue(
+    'Recoverable snack',
+  );
+  await expect(
+    page.getByAltText('Nutrition label ready to review'),
+  ).toBeVisible();
+  await expect(
+    page.locator('.label-nutrient-row').first().getByLabel('Amount'),
+  ).toHaveValue('250');
 });
 
 test('does not treat recipe quantities as a consumed nutrition estimate', async ({
@@ -456,22 +640,7 @@ test('has an installable manifest and no serious accessibility violations', asyn
   await expect(
     page.getByRole('heading', { name: 'Estimated nutrition' }),
   ).toBeVisible();
-  await page.addScriptTag({ content: axe.source });
-  const violations = await page.evaluate(async () => {
-    const runner = (
-      window as unknown as {
-        axe: {
-          run: () => Promise<{
-            violations: Array<{ impact: string | null; id: string }>;
-          }>;
-        };
-      }
-    ).axe;
-    return (await runner.run()).violations.filter(
-      (violation) =>
-        violation.impact === 'critical' || violation.impact === 'serious',
-    );
-  });
+  const violations = await seriousAccessibilityViolations(page);
   expect(violations).toEqual([]);
 });
 

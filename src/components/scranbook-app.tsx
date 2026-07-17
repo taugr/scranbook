@@ -32,6 +32,9 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand-mark';
 import { DiaryControls } from '@/components/diary-controls';
+import { LabelNutritionSummary } from '@/components/label-nutrition-summary';
+import { NutritionLabelCapture } from '@/components/nutrition-label-capture';
+import { NutritionLabelReview } from '@/components/nutrition-label-review';
 import { NutritionMatchPicker } from '@/components/nutrition-match-picker';
 import {
   createDiaryArchive,
@@ -73,9 +76,16 @@ import {
   type NutritionCandidate,
 } from '@/lib/nutrition';
 import {
+  createManualNutritionLabelSource,
+  labelPortionSummary,
+  scaleNutritionLabel,
+} from '@/lib/nutrition-label';
+import {
   analyseMeal,
+  analyseNutritionLabel,
   discoverModels,
   endpointLocation,
+  nutritionLabelPromptVersion,
   promptVersion,
   ProviderError,
 } from '@/lib/provider';
@@ -89,6 +99,7 @@ import {
   type MealDraft,
   type MealEntry,
   type ModelSettings,
+  type NutritionLabelSource,
   type NutritionValues,
   type StoredPhoto,
 } from '@/lib/schema';
@@ -454,20 +465,113 @@ export function ScranbookApp() {
     );
   }
 
+  async function changeEditorIntent(intent: 'meal' | 'nutrition_label') {
+    const labelSource =
+      draft.nutrition?.source.kind === 'nutrition_label'
+        ? draft.nutrition.source
+        : null;
+    if (intent === 'nutrition_label' && !labelSource) {
+      if (
+        (draft.ingredients.length > 0 || draft.nutrition) &&
+        !window.confirm(
+          'Switching to a nutrition label will replace the current ingredients and nutrition calculation. Continue?',
+        )
+      )
+        return;
+      const source = createManualNutritionLabelSource();
+      const nextDraft: MealEntry = {
+        ...draft,
+        classification: 'packaged_food',
+        ingredients: [],
+        nutrition: scaleNutritionLabel(source),
+        analysis: null,
+        portionSummary: labelPortionSummary(source),
+      };
+      setDraft(nextDraft);
+      await persistDraft(nextDraft, pendingPhoto);
+      return;
+    }
+    if (intent === 'meal' && labelSource) {
+      if (
+        !window.confirm(
+          'Switching to a meal photo will remove the reviewed label values. Continue?',
+        )
+      )
+        return;
+      const nextDraft: MealEntry = {
+        ...draft,
+        classification: 'meal',
+        ingredients: [],
+        nutrition: null,
+        analysis: null,
+        portionSummary: '',
+      };
+      setDraft(nextDraft);
+      await persistDraft(nextDraft, pendingPhoto);
+    }
+  }
+
+  async function applyLabelSource(source: NutritionLabelSource) {
+    try {
+      const nutrition = scaleNutritionLabel(source);
+      const nextDraft: MealEntry = {
+        ...draft,
+        title: source.productName,
+        classification: 'packaged_food',
+        ingredients: [],
+        servings:
+          source.consumption.unit === 'serving'
+            ? source.consumption.amount
+            : null,
+        portionSummary: labelPortionSummary(source),
+        nutrition,
+      };
+      setDraft(nextDraft);
+      await persistDraft(nextDraft, pendingPhoto);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  async function enterLabelManually() {
+    if (draft.nutrition?.source.kind !== 'nutrition_label')
+      await changeEditorIntent('nutrition_label');
+    window.requestAnimationFrame(() =>
+      document.getElementById('nutrition-label-review-heading')?.focus(),
+    );
+  }
+
+  async function keepReviewedLabelValues() {
+    if (draft.nutrition?.source.kind !== 'nutrition_label') return;
+    const nextDraft = {
+      ...draft,
+      nutrition: { ...draft.nutrition, stale: false },
+    };
+    setDraft(nextDraft);
+    await persistDraft(nextDraft, pendingPhoto);
+  }
+
   async function choosePhoto(file?: File) {
     if (!file) return;
     resetMessages();
     setBusy('Preparing your photo…');
     try {
+      const labelMode = draft.nutrition?.source.kind === 'nutrition_label';
       const photo = await processImage(file, {
-        maxDimension: modelSettings.maxImageDimension,
-        quality: modelSettings.imageQuality,
+        maxDimension: labelMode ? 2_400 : modelSettings.maxImageDimension,
+        quality: labelMode ? 0.9 : modelSettings.imageQuality,
       });
       setPendingPhoto(photo);
       const nextDraft = {
         ...draft,
         photoId: photo.id,
         capturedAt: new Date().toISOString(),
+        nutrition:
+          labelMode &&
+          draft.nutrition?.source.kind === 'nutrition_label' &&
+          draft.nutrition.source.method === 'model'
+            ? { ...draft.nutrition, stale: true }
+            : draft.nutrition,
       };
       setDraft(nextDraft);
       await persistDraft(nextDraft, photo);
@@ -493,7 +597,15 @@ export function ScranbookApp() {
   }
 
   async function removePendingPhoto() {
-    const nextDraft = { ...draft, photoId: null };
+    const nextDraft = {
+      ...draft,
+      photoId: null,
+      nutrition:
+        draft.nutrition?.source.kind === 'nutrition_label' &&
+        draft.nutrition.source.method === 'model'
+          ? { ...draft.nutrition, stale: true }
+          : draft.nutrition,
+    };
     setPendingPhoto(null);
     setDraft(nextDraft);
     await persistDraft(nextDraft, null);
@@ -518,8 +630,63 @@ export function ScranbookApp() {
       return;
     }
     abortRef.current = new AbortController();
-    setBusy('Looking carefully at your meal…');
+    const labelMode = draft.nutrition?.source.kind === 'nutrition_label';
+    setBusy(
+      labelMode
+        ? 'Transcribing the printed nutrition panel…'
+        : 'Looking carefully at your meal…',
+    );
     try {
+      if (labelMode) {
+        const result = await analyseNutritionLabel(
+          pendingPhoto,
+          modelSettings,
+          abortRef.current.signal,
+        );
+        const now = new Date().toISOString();
+        const column = result.columns[0]!;
+        const source: NutritionLabelSource = {
+          kind: 'nutrition_label',
+          version: 1,
+          productName: result.productName,
+          columns: result.columns,
+          selectedColumnId: column.id,
+          consumption: {
+            amount: column.basisAmount,
+            unit: column.basisUnit,
+          },
+          method: 'model',
+          scannedAt: now,
+          edited: false,
+          warnings: result.warnings,
+          copiedFromEntryId: null,
+        };
+        const nextDraft: MealEntry = {
+          ...draft,
+          title: source.productName,
+          classification: 'packaged_food',
+          ingredients: [],
+          portionSummary: labelPortionSummary(source),
+          nutrition: scaleNutritionLabel(source),
+          analysis: {
+            kind: 'nutrition_label',
+            model: modelSettings.model,
+            endpointOrigin: new URL(modelSettings.baseUrl).origin,
+            promptVersion: nutritionLabelPromptVersion,
+            analysedAt: now,
+            confidence: result.overallConfidence,
+          },
+        };
+        setDraft(nextDraft);
+        await persistDraft(nextDraft, pendingPhoto);
+        setNotice(
+          'The printed values were transcribed. Check every number before saving.',
+        );
+        window.requestAnimationFrame(() =>
+          document.getElementById('nutrition-label-review-heading')?.focus(),
+        );
+        return;
+      }
       const result = await analyseMeal(
         pendingPhoto,
         modelSettings,
@@ -558,6 +725,7 @@ export function ScranbookApp() {
             ? `${draft.notes}${draft.notes ? '\n\n' : ''}Model notes: ${result.uncertaintyNotes.join(' • ')}`
             : draft.notes,
         analysis: {
+          kind: 'meal_photo',
           model: modelSettings.model,
           endpointOrigin: new URL(modelSettings.baseUrl).origin,
           promptVersion,
@@ -583,9 +751,45 @@ export function ScranbookApp() {
   async function saveDraft() {
     resetMessages();
     const now = new Date().toISOString();
+    let saveableDraft = draft;
+    if (draft.nutrition?.source.kind === 'nutrition_label') {
+      const source = draft.nutrition.source;
+      const selectedColumn = source.columns.find(
+        (column) => column.id === source.selectedColumnId,
+      );
+      if (
+        !selectedColumn ||
+        selectedColumn.nutrients.every(
+          (nutrient) => nutrient.amount === null,
+        ) ||
+        selectedColumn.nutrients.some(
+          (nutrient) => !nutrient.printedName.trim() || !nutrient.unit.trim(),
+        )
+      ) {
+        setError(
+          'Review the selected column and give each saved nutrient a name, unit, and at least one numeric value.',
+        );
+        return;
+      }
+      if (
+        draft.nutrition.stale &&
+        !window.confirm(
+          'The label photo changed after these values were reviewed. Save them anyway?',
+        )
+      )
+        return;
+      saveableDraft = {
+        ...draft,
+        nutrition: { ...draft.nutrition, stale: false },
+      };
+    }
     const entry = {
-      ...draft,
-      title: draft.title.trim() || 'Untitled meal',
+      ...saveableDraft,
+      title:
+        saveableDraft.title.trim() ||
+        (saveableDraft.nutrition?.source.kind === 'nutrition_label'
+          ? 'Untitled packaged food'
+          : 'Untitled meal'),
       updatedAt: now,
     };
     setBusy('Saving to this device…');
@@ -721,7 +925,9 @@ export function ScranbookApp() {
       setDraft(nextDraft);
       await persistDraft(nextDraft, pendingPhoto);
       setNotice(
-        `Matched ${estimate.nutrition.matchedIngredientCount} of ${estimate.nutrition.ingredientCount} ingredients to the local database.`,
+        estimate.nutrition.source.kind === 'ingredient_database'
+          ? `Matched ${estimate.nutrition.source.matchedIngredientCount} of ${estimate.nutrition.source.ingredientCount} ingredients to the local database.`
+          : 'Nutrition recalculated.',
       );
     } catch (caught) {
       setError(errorMessage(caught));
@@ -1182,6 +1388,10 @@ export function ScranbookApp() {
               onRemovePhoto={() => void removePendingPhoto()}
               onAnalyse={() => void analyse()}
               onCancelAnalyse={() => abortRef.current?.abort()}
+              onIntentChange={(intent) => void changeEditorIntent(intent)}
+              onManualLabel={() => void enterLabelManually()}
+              onKeepLabelValues={() => void keepReviewedLabelValues()}
+              onLabelSourceChange={(source) => void applyLabelSource(source)}
               onPrivacyChange={(checked) =>
                 void updatePrivacyAcknowledgement(checked)
               }
@@ -1586,7 +1796,10 @@ function NutritionSummary({
 }: {
   nutrition: NonNullable<MealEntry['nutrition']>;
 }) {
+  if (nutrition.source.kind === 'nutrition_label')
+    return <LabelNutritionSummary nutrition={nutrition} />;
   const { values } = nutrition;
+  const databaseSource = nutrition.source;
   return (
     <section className="nutrition-card" aria-labelledby="nutrition-heading">
       <div className="section-heading">
@@ -1624,9 +1837,10 @@ function NutritionSummary({
         </dl>
       </div>
       <p className="nutrition-disclaimer">
-        Based on {nutrition.matchedIngredientCount} of{' '}
-        {nutrition.ingredientCount} ingredient matches from bundled USDA and UK
-        food-composition data. This is a rough estimate, not medical guidance.
+        {databaseSource
+          ? `Based on ${databaseSource.matchedIngredientCount} of ${databaseSource.ingredientCount} ingredient matches from bundled USDA and UK food-composition data.`
+          : 'From a reviewed nutrition label.'}{' '}
+        This is not medical guidance.
       </p>
       {nutrition.notes.length > 0 && (
         <details className="nutrition-notes">
@@ -1654,6 +1868,10 @@ function MealEditor({
   onRemovePhoto,
   onAnalyse,
   onCancelAnalyse,
+  onIntentChange,
+  onManualLabel,
+  onKeepLabelValues,
+  onLabelSourceChange,
   onPrivacyChange,
   onDraftChange,
   onIngredientChange,
@@ -1676,6 +1894,10 @@ function MealEditor({
   onRemovePhoto: () => void;
   onAnalyse: () => void;
   onCancelAnalyse: () => void;
+  onIntentChange: (intent: 'meal' | 'nutrition_label') => void;
+  onManualLabel: () => void;
+  onKeepLabelValues: () => void;
+  onLabelSourceChange: (source: NutritionLabelSource) => void;
   onPrivacyChange: (checked: boolean) => void;
   onDraftChange: (entry: MealEntry) => void;
   onIngredientChange: (index: number, patch: Partial<Ingredient>) => void;
@@ -1687,6 +1909,7 @@ function MealEditor({
   onSave: () => void;
   onOpenSettings: () => void;
 }) {
+  const labelMode = draft.nutrition?.source.kind === 'nutrition_label';
   return (
     <section className="editor-page">
       <div className="stage-heading">
@@ -1695,7 +1918,7 @@ function MealEditor({
         </button>
         <div>
           <p className="eyebrow">A new page</p>
-          <h1>Add a meal</h1>
+          <h1>{labelMode ? 'Add packaged food' : 'Add a meal'}</h1>
           <p
             className={`draft-status draft-status--${draftStatus}`}
             aria-live="polite"
@@ -1710,17 +1933,88 @@ function MealEditor({
           </p>
         </div>
       </div>
+      <div
+        className="editor-intent-picker"
+        role="group"
+        aria-label="What are you adding?"
+      >
+        <button
+          className={
+            !labelMode
+              ? 'intent-option intent-option--selected'
+              : 'intent-option'
+          }
+          aria-pressed={!labelMode}
+          onClick={() => onIntentChange('meal')}
+        >
+          <Camera /> Meal photo
+        </button>
+        <button
+          className={
+            labelMode
+              ? 'intent-option intent-option--selected'
+              : 'intent-option'
+          }
+          aria-pressed={labelMode}
+          onClick={() => onIntentChange('nutrition_label')}
+        >
+          <Calculator /> Nutrition label
+        </button>
+      </div>
       <div className="editor-grid">
         <div className="photo-column">
-          {photoUrl ? (
-            <div className="photo-preview">
-              <img src={photoUrl} alt="Meal ready to review" />
-              <div className="photo-tools">
-                <button onClick={onRotate}>
-                  <RotateCw /> Rotate
-                </button>
-                <label className="file-picker">
-                  <ImagePlus /> Replace
+          {labelMode ? (
+            <NutritionLabelCapture
+              photoUrl={photoUrl}
+              settings={settings}
+              busy={busy}
+              stale={Boolean(draft.nutrition?.stale)}
+              onFile={onFile}
+              onRotate={onRotate}
+              onRemovePhoto={onRemovePhoto}
+              onScan={onAnalyse}
+              onCancel={onCancelAnalyse}
+              onManual={onManualLabel}
+              onKeepValues={onKeepLabelValues}
+              onPrivacyChange={onPrivacyChange}
+              onOpenSettings={onOpenSettings}
+            />
+          ) : (
+            <>
+              {photoUrl ? (
+                <div className="photo-preview">
+                  <img src={photoUrl} alt="Meal ready to review" />
+                  <div className="photo-tools">
+                    <button onClick={onRotate}>
+                      <RotateCw /> Rotate
+                    </button>
+                    <label className="file-picker">
+                      <ImagePlus /> Replace
+                      <input
+                        className="visually-hidden"
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(event) => onFile(event.target.files?.[0])}
+                      />
+                    </label>
+                    <button onClick={onRemovePhoto}>
+                      <Trash2 /> Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <label className="camera-drop file-picker">
+                  <span className="camera-orbit">
+                    <Camera />
+                  </span>
+                  <strong>Photograph your plate</strong>
+                  <span>
+                    Use the camera or choose a photo you already have.
+                  </span>
+                  <span className="button button--primary">
+                    <ImagePlus /> Choose photo
+                  </span>
                   <input
                     className="visually-hidden"
                     type="file"
@@ -1729,79 +2023,60 @@ function MealEditor({
                     onChange={(event) => onFile(event.target.files?.[0])}
                   />
                 </label>
-                <button onClick={onRemovePhoto}>
-                  <Trash2 /> Remove
-                </button>
-              </div>
-            </div>
-          ) : (
-            <label className="camera-drop file-picker">
-              <span className="camera-orbit">
-                <Camera />
-              </span>
-              <strong>Photograph your plate</strong>
-              <span>Use the camera or choose a photo you already have.</span>
-              <span className="button button--primary">
-                <ImagePlus /> Choose photo
-              </span>
-              <input
-                className="visually-hidden"
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={(event) => onFile(event.target.files?.[0])}
-              />
-            </label>
-          )}
-          {photoUrl && (
-            <div className="analysis-card">
-              <div>
-                <span className="sparkle-badge">
-                  <Sparkles />
-                </span>
-                <div>
-                  <strong>Ask your model for a first pass</strong>
-                  <p>
-                    {settings.model} via {settings.baseUrl}
+              )}
+              {photoUrl && (
+                <div className="analysis-card">
+                  <div>
+                    <span className="sparkle-badge">
+                      <Sparkles />
+                    </span>
+                    <div>
+                      <strong>Ask your model for a first pass</strong>
+                      <p>
+                        {settings.model} via {settings.baseUrl}
+                      </p>
+                    </div>
+                  </div>
+                  <label className="privacy-check">
+                    <input
+                      type="checkbox"
+                      checked={settings.privacyAcknowledged}
+                      onChange={(event) =>
+                        onPrivacyChange(event.target.checked)
+                      }
+                    />
+                    <span>
+                      I understand this photo goes directly to my configured
+                      model endpoint.
+                    </span>
+                  </label>
+                  <div className="analysis-actions">
+                    <button
+                      className="button button--aubergine"
+                      onClick={onAnalyse}
+                      disabled={Boolean(busy)}
+                    >
+                      <Sparkles /> Analyse photo
+                    </button>
+                    {busy && (
+                      <button
+                        className="button button--quiet"
+                        onClick={onCancelAnalyse}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    <button className="text-button" onClick={onOpenSettings}>
+                      Model settings
+                    </button>
+                  </div>
+                  <p className="manual-entry-note">
+                    Prefer not to use a model? Keep filling in the meal
+                    manually; analysis is always optional.
                   </p>
                 </div>
-              </div>
-              <label className="privacy-check">
-                <input
-                  type="checkbox"
-                  checked={settings.privacyAcknowledged}
-                  onChange={(event) => onPrivacyChange(event.target.checked)}
-                />
-                <span>
-                  I understand this photo goes directly to my configured model
-                  endpoint.
-                </span>
-              </label>
-              <div className="analysis-actions">
-                <button
-                  className="button button--aubergine"
-                  onClick={onAnalyse}
-                  disabled={Boolean(busy)}
-                >
-                  <Sparkles /> Analyse photo
-                </button>
-                {busy && (
-                  <button
-                    className="button button--quiet"
-                    onClick={onCancelAnalyse}
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button className="text-button" onClick={onOpenSettings}>
-                  Model settings
-                </button>
-              </div>
-              <p className="manual-entry-note">
-                Prefer not to use a model? Keep filling in the meal manually;
-                analysis is always optional.
-              </p>
-            </div>
+              )}
+            </>
           )}
         </div>
 
@@ -1840,231 +2115,248 @@ function MealEditor({
                 />
               </label>
             </div>
-            <label>
-              <span>What was it?</span>
-              <input
-                value={draft.title}
-                placeholder="e.g. Mushroom toast"
-                onChange={(event) =>
-                  onDraftChange({ ...draft, title: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              <span>Portion</span>
-              <input
-                value={draft.portionSummary}
-                placeholder="e.g. One full dinner plate"
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    portionSummary: event.target.value,
-                  })
-                }
-              />
-            </label>
-            <div className="field-row">
-              <label>
-                <span>Kind of image</span>
-                <select
-                  value={draft.classification}
-                  onChange={(event) =>
-                    onDraftChange({
-                      ...draft,
-                      classification: event.target
-                        .value as MealEntry['classification'],
-                    })
-                  }
-                >
-                  <option value="meal">Meal</option>
-                  <option value="recipe_card">Recipe card</option>
-                  <option value="packaged_food">Packaged food</option>
-                  <option value="unclear">Unclear</option>
-                </select>
-              </label>
-              <label>
-                <span>Servings</span>
-                <input
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value={draft.servings ?? ''}
-                  placeholder="—"
-                  onChange={(event) =>
-                    onDraftChange({
-                      ...draft,
-                      servings: event.target.value
-                        ? Number(event.target.value)
-                        : null,
-                    })
-                  }
-                />
-              </label>
-            </div>
+            {!labelMode && (
+              <>
+                <label>
+                  <span>What was it?</span>
+                  <input
+                    value={draft.title}
+                    placeholder="e.g. Mushroom toast"
+                    onChange={(event) =>
+                      onDraftChange({ ...draft, title: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Portion</span>
+                  <input
+                    value={draft.portionSummary}
+                    placeholder="e.g. One full dinner plate"
+                    onChange={(event) =>
+                      onDraftChange({
+                        ...draft,
+                        portionSummary: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <div className="field-row">
+                  <label>
+                    <span>Kind of image</span>
+                    <select
+                      value={draft.classification}
+                      onChange={(event) =>
+                        onDraftChange({
+                          ...draft,
+                          classification: event.target
+                            .value as MealEntry['classification'],
+                        })
+                      }
+                    >
+                      <option value="meal">Meal</option>
+                      <option value="recipe_card">Recipe card</option>
+                      <option value="packaged_food">Packaged food</option>
+                      <option value="unclear">Unclear</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Servings</span>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={draft.servings ?? ''}
+                      placeholder="—"
+                      onChange={(event) =>
+                        onDraftChange({
+                          ...draft,
+                          servings: event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              </>
+            )}
           </div>
 
-          <div className="form-card ingredients-editor">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Your best estimate</p>
-                <h2>Ingredients</h2>
-              </div>
-              {draft.analysis && (
-                <span className="ai-label">
-                  <Sparkles /> Check the model’s work
-                </span>
-              )}
-            </div>
-            {draft.ingredients.map((ingredient, index) => (
-              <div className="ingredient-editor" key={ingredient.id}>
-                <label className="ingredient-name">
-                  <span>Ingredient</span>
-                  <input
-                    value={ingredient.name}
-                    placeholder="Ingredient"
-                    onChange={(event) =>
-                      onIngredientChange(index, { name: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Amount</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={ingredient.amount ?? ''}
-                    placeholder="—"
-                    onChange={(event) =>
-                      onIngredientChange(index, {
-                        amount: event.target.value
-                          ? Number(event.target.value)
-                          : null,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Unit</span>
-                  <input
-                    value={ingredient.unit ?? ''}
-                    placeholder="g, ml, tbsp…"
-                    onChange={(event) =>
-                      onIngredientChange(index, {
-                        unit: event.target.value || null,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Estimated grams</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={ingredient.estimatedGrams ?? ''}
-                    placeholder="—"
-                    onChange={(event) =>
-                      onIngredientChange(index, {
-                        estimatedGrams: event.target.value
-                          ? Number(event.target.value)
-                          : null,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  <span>Confidence</span>
-                  <select
-                    value={ingredient.confidence}
-                    onChange={(event) =>
-                      onIngredientChange(index, {
-                        confidence: event.target
-                          .value as Ingredient['confidence'],
-                      })
-                    }
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </label>
-                <button
-                  className="remove-row"
-                  onClick={() => onIngredientRemove(index)}
-                  aria-label={`Remove ${ingredient.name || 'ingredient'}`}
-                >
-                  <X />
-                </button>
-                <label className="ingredient-preparation">
-                  <span>Preparation</span>
-                  <input
-                    value={ingredient.preparation ?? ''}
-                    placeholder="e.g. raw, roasted, steamed"
-                    onChange={(event) =>
-                      onIngredientChange(index, {
-                        preparation: event.target.value || null,
-                      })
-                    }
-                  />
-                </label>
-                {ingredient.nutritionMatch && (
-                  <div className="nutrition-match">
-                    <p>
-                      <Database /> {ingredient.nutritionMatch.foodName} ·{' '}
-                      {ingredient.nutritionMatch.source === 'uk_cofid'
-                        ? 'UK CoFID'
-                        : 'USDA FoodData Central'}{' '}
-                      ·{' '}
-                      {ingredient.nutritionMatch.selectedBy === 'user'
-                        ? 'chosen by you'
-                        : `${ingredient.nutritionMatch.confidence} automatic match`}
-                    </p>
-                    <button
-                      id={`review-match-${index}`}
-                      className="text-button"
-                      onClick={() => onReviewNutritionMatch(index)}
-                    >
-                      Review match
-                    </button>
+          {!labelMode && (
+            <>
+              <div className="form-card ingredients-editor">
+                <div className="section-heading">
+                  <div>
+                    <p className="eyebrow">Your best estimate</p>
+                    <h2>Ingredients</h2>
                   </div>
-                )}
-                {ingredient.nutritionExcluded && (
-                  <div className="nutrition-match nutrition-match--excluded">
-                    <p>Excluded from nutrition by you.</p>
-                    <button
-                      id={`review-match-${index}`}
-                      className="text-button"
-                      onClick={() => onReviewNutritionMatch(index)}
-                    >
-                      Review choice
-                    </button>
-                  </div>
-                )}
-                {!ingredient.nutritionMatch &&
-                  !ingredient.nutritionExcluded &&
-                  ingredient.name && (
-                    <button
-                      id={`review-match-${index}`}
-                      className="text-button find-match"
-                      onClick={() => onReviewNutritionMatch(index)}
-                    >
-                      <Database /> Find a local food match
-                    </button>
+                  {draft.analysis && (
+                    <span className="ai-label">
+                      <Sparkles /> Check the model’s work
+                    </span>
                   )}
+                </div>
+                {draft.ingredients.map((ingredient, index) => (
+                  <div className="ingredient-editor" key={ingredient.id}>
+                    <label className="ingredient-name">
+                      <span>Ingredient</span>
+                      <input
+                        value={ingredient.name}
+                        placeholder="Ingredient"
+                        onChange={(event) =>
+                          onIngredientChange(index, {
+                            name: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Amount</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={ingredient.amount ?? ''}
+                        placeholder="—"
+                        onChange={(event) =>
+                          onIngredientChange(index, {
+                            amount: event.target.value
+                              ? Number(event.target.value)
+                              : null,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Unit</span>
+                      <input
+                        value={ingredient.unit ?? ''}
+                        placeholder="g, ml, tbsp…"
+                        onChange={(event) =>
+                          onIngredientChange(index, {
+                            unit: event.target.value || null,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Estimated grams</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={ingredient.estimatedGrams ?? ''}
+                        placeholder="—"
+                        onChange={(event) =>
+                          onIngredientChange(index, {
+                            estimatedGrams: event.target.value
+                              ? Number(event.target.value)
+                              : null,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Confidence</span>
+                      <select
+                        value={ingredient.confidence}
+                        onChange={(event) =>
+                          onIngredientChange(index, {
+                            confidence: event.target
+                              .value as Ingredient['confidence'],
+                          })
+                        }
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </label>
+                    <button
+                      className="remove-row"
+                      onClick={() => onIngredientRemove(index)}
+                      aria-label={`Remove ${ingredient.name || 'ingredient'}`}
+                    >
+                      <X />
+                    </button>
+                    <label className="ingredient-preparation">
+                      <span>Preparation</span>
+                      <input
+                        value={ingredient.preparation ?? ''}
+                        placeholder="e.g. raw, roasted, steamed"
+                        onChange={(event) =>
+                          onIngredientChange(index, {
+                            preparation: event.target.value || null,
+                          })
+                        }
+                      />
+                    </label>
+                    {ingredient.nutritionMatch && (
+                      <div className="nutrition-match">
+                        <p>
+                          <Database /> {ingredient.nutritionMatch.foodName} ·{' '}
+                          {ingredient.nutritionMatch.source === 'uk_cofid'
+                            ? 'UK CoFID'
+                            : 'USDA FoodData Central'}{' '}
+                          ·{' '}
+                          {ingredient.nutritionMatch.selectedBy === 'user'
+                            ? 'chosen by you'
+                            : `${ingredient.nutritionMatch.confidence} automatic match`}
+                        </p>
+                        <button
+                          id={`review-match-${index}`}
+                          className="text-button"
+                          onClick={() => onReviewNutritionMatch(index)}
+                        >
+                          Review match
+                        </button>
+                      </div>
+                    )}
+                    {ingredient.nutritionExcluded && (
+                      <div className="nutrition-match nutrition-match--excluded">
+                        <p>Excluded from nutrition by you.</p>
+                        <button
+                          id={`review-match-${index}`}
+                          className="text-button"
+                          onClick={() => onReviewNutritionMatch(index)}
+                        >
+                          Review choice
+                        </button>
+                      </div>
+                    )}
+                    {!ingredient.nutritionMatch &&
+                      !ingredient.nutritionExcluded &&
+                      ingredient.name && (
+                        <button
+                          id={`review-match-${index}`}
+                          className="text-button find-match"
+                          onClick={() => onReviewNutritionMatch(index)}
+                        >
+                          <Database /> Find a local food match
+                        </button>
+                      )}
+                  </div>
+                ))}
+                <button className="add-row" onClick={onIngredientAdd}>
+                  <Plus /> Add ingredient
+                </button>
               </div>
-            ))}
-            <button className="add-row" onClick={onIngredientAdd}>
-              <Plus /> Add ingredient
-            </button>
-          </div>
 
-          <NutritionEditor
-            nutrition={draft.nutrition}
-            onCalculate={onCalculateNutrition}
-            onChange={onNutritionChange}
-            disabled={Boolean(busy)}
-          />
+              <NutritionEditor
+                nutrition={draft.nutrition}
+                onCalculate={onCalculateNutrition}
+                onChange={onNutritionChange}
+                disabled={Boolean(busy)}
+              />
+            </>
+          )}
+
+          {labelMode && draft.nutrition && (
+            <NutritionLabelReview
+              nutrition={draft.nutrition}
+              onChange={onLabelSourceChange}
+            />
+          )}
 
           <div className="form-card">
             <label>
@@ -2102,6 +2394,8 @@ function NutritionEditor({
   onChange: (patch: Partial<NutritionValues>) => void;
   disabled: boolean;
 }) {
+  const databaseSource =
+    nutrition?.source.kind === 'ingredient_database' ? nutrition.source : null;
   const fields: Array<{
     key: keyof NutritionValues;
     label: string;
@@ -2160,10 +2454,10 @@ function NutritionEditor({
             ))}
           </div>
           <p className="nutrition-disclaimer">
-            {nutrition.matchedIngredientCount} of {nutrition.ingredientCount}{' '}
-            ingredients matched to bundled USDA FoodData Central and UK CoFID
-            records. Values remain editable because both photo portions and food
-            matches are estimates.
+            {databaseSource
+              ? `${databaseSource.matchedIngredientCount} of ${databaseSource.ingredientCount} ingredients matched to bundled USDA FoodData Central and UK CoFID records.`
+              : 'Values came from a reviewed nutrition label.'}{' '}
+            Values remain editable.
           </p>
           {nutrition.notes.length > 0 && (
             <ul className="nutrition-editor-notes">

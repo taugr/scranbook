@@ -93,7 +93,10 @@ describe('local nutrition calculation', () => {
     expect(result.nutrition.values.energyKcal).toBe(195);
     expect(result.nutrition.values.carbsG).toBe(42);
     expect(result.nutrition.values.saltG).toBe(0);
-    expect(result.nutrition.matchedIngredientCount).toBe(1);
+    expect(result.nutrition.source).toMatchObject({
+      kind: 'ingredient_database',
+      matchedIngredientCount: 1,
+    });
     expect(result.ingredients[0]?.nutritionMatch?.foodId).toBe('cofid:rice');
     expect(result.ingredients[0]?.nutritionMatch?.selectedBy).toBe('automatic');
   });
@@ -113,11 +116,15 @@ describe('local nutrition calculation', () => {
             selectedBy: 'user',
             valuesPer100g: {
               energyKcal: 20,
+              energyKj: null,
               proteinG: 1,
               carbsG: 4.8,
               fatG: 0.1,
+              saturatesG: null,
+              sugarsG: null,
               fibreG: 1.5,
               saltG: 0.03,
+              sodiumMg: null,
             },
           },
         }),
@@ -133,7 +140,10 @@ describe('local nutrition calculation', () => {
       [ingredient({ nutritionExcluded: true })],
       { version: 'test-1', foods },
     );
-    expect(excluded.nutrition.matchedIngredientCount).toBe(0);
+    expect(excluded.nutrition.source).toMatchObject({
+      kind: 'ingredient_database',
+      matchedIngredientCount: 0,
+    });
     expect(excluded.nutrition.notes[0]).toMatch(/excluded/);
   });
 
@@ -142,7 +152,10 @@ describe('local nutrition calculation', () => {
       [ingredient({ name: 'mystery garnish', estimatedGrams: 10 })],
       { version: 'test-1', foods },
     );
-    expect(result.nutrition.matchedIngredientCount).toBe(0);
+    expect(result.nutrition.source).toMatchObject({
+      kind: 'ingredient_database',
+      matchedIngredientCount: 0,
+    });
     expect(result.nutrition.notes[0]).toMatch(/No reliable local food match/);
   });
 });

@@ -31,9 +31,13 @@ development profile, but the provider is configurable.
 - Editable dish, portion, ingredient, confidence, and uncertainty fields.
 - Editable calorie and macro estimates calculated locally from bundled official
   food-composition data.
+- A dedicated nutrition-label scanner with model-assisted transcription, fully
+  manual entry, reviewable printed values, and local scaling by grams,
+  millilitres, or servings.
 - Reviewable nutrition matches with local-record selection and ingredient exclusion.
 - Local IndexedDB persistence with export, import, deletion, storage visibility, and
-  gentle archive reminders.
+  gentle archive reminders. Version 2 archives preserve reviewed label provenance
+  and remain able to import version 1 backups.
 - Guided LM Studio and custom OpenAI-compatible setup with endpoint privacy cues,
   discovered-model selection, and advanced connection controls.
 - Mobile diary/add/settings navigation and a two-column desktop journal.
@@ -104,7 +108,9 @@ nutrition API at runtime. See [docs/nutrition-data.md](./docs/nutrition-data.md)
 
 Scranbook has no diary backend. Cloudflare serves the application files, while entries, photos,
 settings, and saved credentials stay in browser storage. A photo leaves the device only when the
-user chooses to analyse it, and then travels directly to the configured endpoint.
+user chooses to analyse a meal photo or scan a label, and then travels directly
+to the configured endpoint. Label arithmetic and manual label entry stay in the
+browser.
 
 See the in-app `/privacy` page and [SECURITY.md](./SECURITY.md).
 

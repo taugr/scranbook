@@ -6,7 +6,7 @@ Last updated: 2026-07-18
 Near-term product work is defined in
 [next-features-plan.md](./next-features-plan.md).
 
-A follow-on packaged-food workflow is planned in
+A dedicated packaged-food workflow is implemented from
 [nutrition-label-scanner-plan.md](./nutrition-label-scanner-plan.md).
 
 ## 1. Product goal
@@ -33,6 +33,9 @@ model is configured or the model is unavailable.
 - Nutrition is calculated locally from bundled official food-composition data;
   the model estimates ingredients and consumed gram weights but does not invent
   calorie or macro values.
+- Nutrition-label scans use the configured model only to transcribe visible
+  printed facts. The reviewed label values are scaled locally from an explicit
+  amount consumed, and the same workflow can be completed manually offline.
 - The installed app can browse, add, edit, export, and delete diary entries
   offline. AI analysis requires a reachable model endpoint.
 
@@ -83,8 +86,9 @@ Suggested stores:
 - `servings`: optional estimated number of servings
 - `portionSummary`: editable plain-language estimate
 - `ingredients`: ordered ingredient estimates
-- `nutrition`: editable totals, source matches, confidence, calculation version,
-  and estimate notes
+- `nutrition`: editable consumed totals and explicit ingredient-database or
+  nutrition-label provenance, including reviewed printed columns and the amount
+  consumed
 - `photoId`: reference to the processed image
 - `analysis`: model name, endpoint origin, prompt/schema version, confidence,
   and analysis timestamp; never an API key
@@ -428,6 +432,9 @@ live production AI is not a release gate.
 - A recipe-card photo is not silently presented as the consumed portion.
 - Consumed meals can calculate editable calories and macros from bundled local
   data, including while offline, without a nutrition API.
+- A user can scan or manually enter a nutrition label, review every printed
+  value, enter how much was consumed, and save locally scaled label-derived
+  nutrition with unambiguous provenance.
 - Reloading or going offline retains diary entries and processed images.
 - Scranbook deploys no Worker script that could receive diary or photo data.
 - The UI clearly identifies when a model endpoint will receive a photo.
@@ -484,9 +491,25 @@ live production AI is not a release gate.
 - Do not calculate nutrition automatically for recipe cards or unclear images.
 - Preserve legacy entries and archives by defaulting missing nutrition fields.
 
+### Nutrition-label extension
+
+- Keep label scanning distinct from meal-photo estimation and create one
+  packaged-food entry per reviewed label.
+- Transcribe visible label columns through an explicit model action, or enter
+  them manually without a model.
+- Preserve per-100-g, per-100-ml, and per-serving columns independently,
+  including qualifiers, daily-value context, confidence, and additional
+  nutrients.
+- Scale reviewed values deterministically in the browser from grams,
+  millilitres, or servings only when the printed basis supports that unit.
+- Store structural label provenance and label-specific analysis metadata; never
+  describe these totals as ingredient-database estimates.
+- Export archive format version 2 and import both version 1 and version 2
+  archives.
+
 ## 17. Deferred work not included in the current plan
 
-- Micronutrient detail, allergens, or medical guidance.
+- Ingredient-database micronutrient expansion, allergens, or medical guidance.
 - Accounts, cross-device sync, sharing, social features, or server backups.
 - On-device WebGPU inference bundled into the PWA.
 - Barcode databases, external nutrition-provider integrations, or restaurant

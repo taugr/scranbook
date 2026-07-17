@@ -16,9 +16,11 @@ export default function PrivacyPage() {
       <h2>When a photo leaves the device</h2>
       <p>
         Scranbook sends a photo only when you choose{' '}
-        <strong>Analyse photo</strong>. It goes directly from your browser to
-        the model endpoint you configured. A remote endpoint receives that
-        photo; a model running on your own computer may keep the request local.
+        <strong>Analyse photo</strong> or{' '}
+        <strong>Scan label with configured model</strong>. It goes directly from
+        your browser to the model endpoint you configured. A remote endpoint
+        receives that photo; a model running on your own computer may keep the
+        request local.
       </p>
       <h2>What Cloudflare receives</h2>
       <p>
@@ -48,6 +50,14 @@ export default function PrivacyPage() {
         . The matching and arithmetic happen in this browser and remain
         available offline.
       </p>
+      <h2>Nutrition labels</h2>
+      <p>
+        A configured model can transcribe a nutrition panel after you explicitly
+        start a scan. You review the printed values and enter how much you
+        consumed. Scranbook performs the scaling in this browser, does not send
+        the label to a nutrition service, and also supports fully manual label
+        entry offline.
+      </p>
       <p>
         Contains public sector information licensed under the{' '}
         <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/">
@@ -57,11 +67,11 @@ export default function PrivacyPage() {
       </p>
       <h2>Important limits</h2>
       <p>
-        Ingredient recognition, portion weights, database matches, and
-        nutritional totals are editable estimates, not allergy, medical, or
-        food-safety advice. Locally stored credentials can be read by code
-        running under the Scranbook origin; session-only credential storage is
-        available for reduced persistence.
+        Ingredient recognition, portion weights, database matches, label
+        transcription, and nutritional totals may be incomplete or incorrect.
+        They are not allergy, medical, or food-safety advice. Locally stored
+        credentials can be read by code running under the Scranbook origin;
+        session-only credential storage is available for reduced persistence.
       </p>
     </main>
   );

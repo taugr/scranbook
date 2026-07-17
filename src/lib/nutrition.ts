@@ -146,12 +146,16 @@ function round(value: number, digits = 1) {
 function per100g(food: NutritionFood): NutritionValues {
   return {
     energyKcal: food.energyKcal,
+    energyKj: null,
     proteinG: food.proteinG,
     carbsG: food.carbsG,
     fatG: food.fatG,
+    saturatesG: null,
+    sugarsG: null,
     fibreG: food.fibreG,
     saltG:
       food.sodiumMg === null ? null : round((food.sodiumMg * 2.5) / 1000, 2),
+    sodiumMg: food.sodiumMg,
   };
 }
 
@@ -211,11 +215,15 @@ export function calculateNutrition(
   const notes: string[] = [];
   const values: NutritionValues = {
     energyKcal: 0,
+    energyKj: null,
     proteinG: 0,
     carbsG: 0,
     fatG: 0,
+    saturatesG: null,
+    sugarsG: null,
     fibreG: 0,
     saltG: 0,
+    sodiumMg: null,
   };
   let matchedIngredientCount = 0;
   const nextIngredients = ingredients.map((ingredient) => {
@@ -290,9 +298,13 @@ export function calculateNutrition(
     ingredients: nextIngredients,
     nutrition: {
       values,
-      matchedIngredientCount,
-      ingredientCount: ingredients.length,
-      databaseVersion: database.version,
+      source: {
+        kind: 'ingredient_database',
+        matchedIngredientCount,
+        ingredientCount: ingredients.length,
+        databaseVersion: database.version,
+      },
+      additionalValues: [],
       calculatedAt: now.toISOString(),
       edited: false,
       stale: false,

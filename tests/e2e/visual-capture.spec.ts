@@ -29,6 +29,70 @@ const result = {
   uncertaintyNotes: ['Recipe quantities do not show what was consumed.'],
 };
 
+const labelResult = {
+  productName: 'Cocoa oat bar',
+  columns: [
+    {
+      basis: 'per_100g',
+      basisAmount: 100,
+      basisUnit: 'g',
+      printedHeading: 'Per 100 g',
+      servingDescription: '1 bar (30 g)',
+      servingSize: null,
+      nutrients: [
+        {
+          key: 'energy_kcal',
+          printedName: 'Energy',
+          amount: 400,
+          unit: 'kcal',
+          qualifier: 'exact',
+          dailyValuePercent: null,
+          confidence: 'high',
+        },
+        {
+          key: 'protein',
+          printedName: 'Protein',
+          amount: 10,
+          unit: 'g',
+          qualifier: 'exact',
+          dailyValuePercent: 20,
+          confidence: 'low',
+        },
+      ],
+    },
+    {
+      basis: 'per_serving',
+      basisAmount: 1,
+      basisUnit: 'serving',
+      printedHeading: 'Per bar',
+      servingDescription: '1 bar (30 g)',
+      servingSize: { amount: 30, unit: 'g' },
+      nutrients: [
+        {
+          key: 'energy_kcal',
+          printedName: 'Energy',
+          amount: 120,
+          unit: 'kcal',
+          qualifier: 'exact',
+          dailyValuePercent: null,
+          confidence: 'high',
+        },
+        {
+          key: 'other',
+          printedName: 'Iron',
+          amount: 2,
+          unit: 'mg',
+          qualifier: 'approximately',
+          dailyValuePercent: 10,
+          confidence: 'medium',
+        },
+      ],
+    },
+  ],
+  warnings: ['Check the low-confidence protein cell'],
+  overallConfidence: 'medium',
+};
+
 async function startFirstMeal(page: import('@playwright/test').Page) {
   const mobileAdd = page.getByRole('button', { name: 'Add', exact: true });
   if (await mobileAdd.isVisible()) {
@@ -111,6 +175,53 @@ test('captures the visual review surfaces', async ({ page }, testInfo) => {
   await nutritionCard.scrollIntoViewIfNeeded();
   await page.screenshot({
     path: `output/visual-review/${project}-nutrition.png`,
+    fullPage: false,
+  });
+});
+
+test('captures nutrition label surfaces', async ({ page }, testInfo) => {
+  test.skip(
+    !captureEnabled,
+    'Set SCRANBOOK_CAPTURE=1 to create review captures.',
+  );
+  await page.goto('/');
+  await startFirstMeal(page);
+  await page.getByRole('button', { name: 'Nutrition label' }).click();
+  const project = testInfo.project.name;
+  await page.screenshot({
+    path: `output/visual-review/${project}-label-capture.png`,
+    fullPage: false,
+  });
+
+  await page.route('**/v1/chat/completions', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        choices: [{ message: { content: JSON.stringify(labelResult) } }],
+      }),
+    });
+  });
+  await page
+    .getByLabel('Choose nutrition label photo')
+    .setInputFiles('public/icon-192.png');
+  await page.getByLabel(/I understand this label photo goes directly/).check();
+  await page
+    .getByRole('button', { name: 'Scan label with configured model' })
+    .click();
+  await page.getByLabel('Printed column').selectOption({ label: 'Per bar' });
+  await page.getByLabel('Amount consumed').fill('1.5');
+  const review = page.locator('.label-review-card');
+  await review.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: `output/visual-review/${project}-label-review.png`,
+    fullPage: false,
+  });
+
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  const summary = page.locator('.label-summary');
+  await summary.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: `output/visual-review/${project}-label-detail.png`,
     fullPage: false,
   });
 });

@@ -23,7 +23,7 @@ export async function createDiaryArchive(): Promise<Blob> {
   const zip = new JSZip();
   const manifest: ArchiveManifest = {
     format: 'scranbook-archive',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     entries,
     photos: photos.map((photo) => ({

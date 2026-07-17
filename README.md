@@ -26,11 +26,16 @@ development profile, but the provider is configurable.
 
 - Camera or gallery capture with browser-side resize and metadata removal.
 - Manual diary entry that works without an AI model.
+- Recoverable local drafts, including an unfinished processed photo.
+- Diary text search, date/meal/image filters, and a purpose-built Log again flow.
 - Editable dish, portion, ingredient, confidence, and uncertainty fields.
 - Editable calorie and macro estimates calculated locally from bundled official
   food-composition data.
-- Local IndexedDB persistence with export, import, deletion, and storage visibility.
-- Configurable model URL, model ID, API key, headers, timeout, and response mode.
+- Reviewable nutrition matches with local-record selection and ingredient exclusion.
+- Local IndexedDB persistence with export, import, deletion, storage visibility, and
+  gentle archive reminders.
+- Guided LM Studio and custom OpenAI-compatible setup with endpoint privacy cues,
+  discovered-model selection, and advanced connection controls.
 - Mobile diary/add/settings navigation and a two-column desktop journal.
 - Installable offline PWA shell with local diary access.
 - No external nutrition API and no medical, allergy, or food-safety claims.
@@ -127,7 +132,7 @@ tests/                   Vitest coverage
 tests/e2e/               Playwright mobile, desktop, PWA, and accessibility coverage
 scripts/                 setup, dataset generation, and opt-in live-model evaluation
 public/                  PWA assets and the bundled local nutrition index
-docs/                    product specification and supporting technical notes
+docs/                    product specification, implementation plans, and technical notes
 ```
 
 ## Quality gate

@@ -55,6 +55,15 @@ async function startFirstMeal(page: import('@playwright/test').Page) {
     .click();
 }
 
+async function openSavedEntry(
+  page: import('@playwright/test').Page,
+  title: string,
+) {
+  const heading = page.getByRole('heading', { name: title, exact: true });
+  if (await heading.isVisible()) return;
+  await page.locator('.mobile-entry').filter({ hasText: title }).click();
+}
+
 test.beforeEach(async ({ page }) => {
   await clearBrowserData(page);
 });
@@ -102,6 +111,7 @@ test('creates and retains a manual diary entry', async ({ page }) => {
     page.getByRole('heading', { name: 'Mushroom toast' }),
   ).toBeVisible();
   await page.reload();
+  await openSavedEntry(page, 'Mushroom toast');
   await expect(
     page.getByRole('heading', { name: 'Mushroom toast' }),
   ).toBeVisible();
@@ -192,7 +202,9 @@ test('tests model discovery and exposes privacy controls', async ({
   await page.route('**/v1/models', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify({ data: [{ id: 'google/gemma-4-e4b' }] }),
+      body: JSON.stringify({
+        data: [{ id: 'google/gemma-4-e4b' }, { id: 'another-vision-model' }],
+      }),
     });
   });
   if (testInfo.project.name === 'desktop') {
@@ -222,8 +234,12 @@ test('tests model discovery and exposes privacy controls', async ({
   ).toBeVisible();
   await page.getByRole('button', { name: 'Test connection' }).click();
   await expect(
-    page.getByText(/Connected\. google\/gemma-4-e4b is ready/),
+    page.getByText(/Connected\. google\/gemma-4-e4b is available/),
   ).toBeVisible();
+  await page
+    .getByLabel('Models reported by this endpoint')
+    .selectOption('another-vision-model');
+  await expect(page.getByText(/Selected another-vision-model/)).toBeVisible();
   await expect(
     page.getByRole('link', { name: /plain-language privacy note/ }),
   ).toHaveAttribute('href', '/privacy/');
@@ -252,6 +268,161 @@ test('returns from settings to an in-progress meal', async ({ page }) => {
   await expect(page.getByLabel('What was it?')).toHaveValue(
     'Unfinished supper',
   );
+});
+
+test('recovers an unfinished meal with its photo after reload', async ({
+  page,
+}) => {
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Recoverable noodles');
+  await page.getByLabel('Portion').fill('One deep bowl');
+  await page
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles('public/icon-192.png');
+  await expect(page.getByText('Draft saved on this device')).toBeVisible();
+
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Continue where you left off.' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Continue draft' }).last().click();
+  await expect(page.getByLabel('What was it?')).toHaveValue(
+    'Recoverable noodles',
+  );
+  await expect(page.getByLabel('Portion')).toHaveValue('One deep bowl');
+  await expect(page.getByAltText('Meal ready to review')).toBeVisible();
+});
+
+test('deleting a meal also removes its unfinished edit draft', async ({
+  page,
+}) => {
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Meal to delete');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Edit' }).click();
+  await page.getByLabel('What was it?').fill('Unfinished edited meal');
+  await expect(page.getByText('Draft saved on this device')).toBeVisible();
+  await page.locator('.back-button').click();
+  await openSavedEntry(page, 'Meal to delete');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Remember the meals that made your day.',
+    }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole('heading', {
+      name: 'Remember the meals that made your day.',
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Continue draft' }),
+  ).toHaveCount(0);
+});
+
+test('searches the diary and starts a fresh log from an entry', async ({
+  page,
+}) => {
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Tuesday lentil bowl');
+  await page.getByLabel('Notes').fill('Extra lemon');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+
+  const mobileDiary = page.locator('.entry-mobile-back:visible');
+  if ((await mobileDiary.count()) > 0) await mobileDiary.click();
+  await page.locator('input[aria-label="Search diary"]:visible').fill('lentil');
+  await expect(page.locator('.diary-result-count:visible')).toHaveText(
+    '1 of 1 entries',
+  );
+  await openSavedEntry(page, 'Tuesday lentil bowl');
+  await page.getByRole('button', { name: 'Log again' }).click();
+  await expect(page.getByLabel('What was it?')).toHaveValue(
+    'Tuesday lentil bowl',
+  );
+  await expect(page.getByLabel('Notes')).toHaveValue('');
+  await page.getByLabel('What was it?').fill('Wednesday lentil bowl');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Wednesday lentil bowl' }),
+  ).toBeVisible();
+});
+
+test('lets people review and override a local nutrition match', async ({
+  page,
+}) => {
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Tomato side');
+  await page.getByRole('button', { name: 'Add ingredient' }).click();
+  await page
+    .getByRole('textbox', { name: 'Ingredient', exact: true })
+    .fill('tomatoes');
+  await page.getByLabel('Estimated grams').fill('100');
+  await page.getByRole('button', { name: 'Calculate locally' }).click();
+  await page.getByRole('button', { name: 'Review match' }).click();
+  await expect(
+    page.getByRole('dialog', { name: 'Review tomatoes match' }),
+  ).toBeVisible();
+  await page
+    .getByLabel('Search local food records')
+    .fill('Tomatoes, fresh, cooked');
+  await page.getByRole('button', { name: /Tomatoes, fresh, cooked/ }).click();
+  await expect(
+    page.getByText(/Tomatoes, fresh, cooked.*chosen by you/),
+  ).toBeVisible();
+});
+
+test('offers guided local-model setup and keyboard-reachable file inputs', async ({
+  page,
+}) => {
+  await startFirstMeal(page);
+  const photoInput = page.locator('input[type="file"]').first();
+  await expect(photoInput).not.toHaveCSS('display', 'none');
+  await photoInput.focus();
+  await expect(photoInput).toBeFocused();
+
+  await page
+    .getByRole('button', { name: /Settings/ })
+    .last()
+    .click();
+  await expect(page.getByText('Manual entry always works.')).toBeVisible();
+  const lmStudio = page.getByRole('button', { name: /^LM Studio/ });
+  await expect(lmStudio).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('Appears local')).toBeVisible();
+
+  await page
+    .getByRole('button', { name: /^Custom compatible endpoint/ })
+    .click();
+  await expect(page.getByLabel('Base URL')).toHaveValue(
+    'http://127.0.0.1:1234/v1',
+  );
+  await page.getByLabel('Base URL').fill('https://models.example.com/v1');
+  await page.getByLabel('API key optional').fill('hosted-provider-secret');
+  await page.getByLabel(/I understand that analysed photos/).check();
+  await page.getByText('Advanced settings', { exact: true }).click();
+  await page
+    .getByLabel('Additional request headers (JSON)')
+    .fill('{"X-Hosted-Secret":"secret"}');
+  await expect(page.getByText('Remote endpoint')).toBeVisible();
+  await expect(
+    page.getByText(/Analysed photos leave this device/),
+  ).toBeVisible();
+
+  await lmStudio.click();
+  await expect(page.getByText('http://127.0.0.1:1234/v1')).toBeVisible();
+  await expect(page.getByLabel('Response mode')).toBeVisible();
+  await expect(
+    page.getByLabel(/I understand that analysed photos/),
+  ).not.toBeChecked();
+  await page
+    .getByRole('button', { name: /^Custom compatible endpoint/ })
+    .click();
+  await expect(page.getByLabel('API key optional')).toHaveValue('');
+  await expect(
+    page.getByLabel('Additional request headers (JSON)'),
+  ).toHaveValue('{}');
 });
 
 test('has an installable manifest and no serious accessibility violations', async ({
@@ -329,6 +500,7 @@ test('keeps the diary available offline', async ({
   await page.reload();
   await context.setOffline(true);
   await page.reload();
+  await openSavedEntry(page, 'Offline soup');
   await expect(
     page.getByRole('heading', { name: 'Offline soup' }),
   ).toBeVisible();

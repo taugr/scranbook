@@ -56,6 +56,7 @@ function ingredient(patch: Partial<Ingredient> = {}): Ingredient {
     confidence: 'high',
     estimatedGrams: null,
     nutritionMatch: null,
+    nutritionExcluded: false,
     ...patch,
   };
 }
@@ -94,6 +95,46 @@ describe('local nutrition calculation', () => {
     expect(result.nutrition.values.saltG).toBe(0);
     expect(result.nutrition.matchedIngredientCount).toBe(1);
     expect(result.ingredients[0]?.nutritionMatch?.foodId).toBe('cofid:rice');
+    expect(result.ingredients[0]?.nutritionMatch?.selectedBy).toBe('automatic');
+  });
+
+  it('preserves a user-selected food and supports explicit exclusion', () => {
+    const manual = calculateNutrition(
+      [
+        ingredient({
+          name: 'tomatoes',
+          preparation: 'raw',
+          estimatedGrams: 100,
+          nutritionMatch: {
+            foodId: 'fdc:tomato-cooked',
+            foodName: 'Tomatoes, cooked',
+            source: 'usda_fndds',
+            confidence: 'medium',
+            selectedBy: 'user',
+            valuesPer100g: {
+              energyKcal: 20,
+              proteinG: 1,
+              carbsG: 4.8,
+              fatG: 0.1,
+              fibreG: 1.5,
+              saltG: 0.03,
+            },
+          },
+        }),
+      ],
+      { version: 'test-1', foods },
+    );
+    expect(manual.ingredients[0]?.nutritionMatch?.foodId).toBe(
+      'fdc:tomato-cooked',
+    );
+    expect(manual.ingredients[0]?.nutritionMatch?.selectedBy).toBe('user');
+
+    const excluded = calculateNutrition(
+      [ingredient({ nutritionExcluded: true })],
+      { version: 'test-1', foods },
+    );
+    expect(excluded.nutrition.matchedIngredientCount).toBe(0);
+    expect(excluded.nutrition.notes[0]).toMatch(/excluded/);
   });
 
   it('keeps unmatched ingredients visible in the estimate notes', () => {

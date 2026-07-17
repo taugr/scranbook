@@ -19,6 +19,12 @@ export interface NutritionFood {
   sodiumMg: number | null;
 }
 
+export interface NutritionCandidate {
+  food: NutritionFood;
+  score: number;
+  confidence: Confidence;
+}
+
 interface NutritionDatabase {
   version: string;
   generatedAt: string;
@@ -174,10 +180,27 @@ export function findNutritionMatches(
 ) {
   const query = `${ingredient.name} ${ingredient.preparation ?? ''}`.trim();
   return foods
-    .map((food) => ({ food, score: scoreFood(query, food) }))
+    .map((food) => {
+      const score = scoreFood(query, food);
+      return { food, score, confidence: confidence(score) };
+    })
     .filter(({ score }) => score >= 0.22)
     .sort((left, right) => right.score - left.score)
     .slice(0, limit);
+}
+
+export function nutritionMatchForCandidate(
+  candidate: NutritionCandidate,
+  selectedBy: NutritionMatch['selectedBy'],
+): NutritionMatch {
+  return {
+    foodId: candidate.food.id,
+    foodName: candidate.food.name,
+    source: candidate.food.source,
+    confidence: candidate.confidence,
+    selectedBy,
+    valuesPer100g: per100g(candidate.food),
+  };
 }
 
 export function calculateNutrition(
@@ -197,12 +220,44 @@ export function calculateNutrition(
   let matchedIngredientCount = 0;
   const nextIngredients = ingredients.map((ingredient) => {
     const grams = amountInGrams(ingredient);
-    const candidate = findNutritionMatches(ingredient, database.foods, 1)[0];
+    if (ingredient.nutritionExcluded) {
+      notes.push(
+        `${ingredient.name || 'An ingredient'} was excluded from nutrition by you.`,
+      );
+      return { ...ingredient, nutritionMatch: null };
+    }
+    const selectedFood =
+      ingredient.nutritionMatch?.selectedBy === 'user'
+        ? database.foods.find(
+            (food) => food.id === ingredient.nutritionMatch?.foodId,
+          )
+        : undefined;
+    if (ingredient.nutritionMatch?.selectedBy === 'user' && !selectedFood) {
+      notes.push(
+        `The chosen local food record for ${ingredient.name || 'an ingredient'} is no longer available.`,
+      );
+      return { ...ingredient, nutritionMatch: null };
+    }
+    const candidate = selectedFood
+      ? {
+          food: selectedFood,
+          score: 1,
+          confidence: ingredient.nutritionMatch?.confidence ?? 'high',
+        }
+      : findNutritionMatches(ingredient, database.foods, 1)[0];
     if (grams === null) {
       notes.push(
         `${ingredient.name || 'An ingredient'} needs a gram estimate.`,
       );
-      return { ...ingredient, nutritionMatch: null };
+      return {
+        ...ingredient,
+        nutritionMatch: candidate
+          ? nutritionMatchForCandidate(
+              candidate,
+              selectedFood ? 'user' : 'automatic',
+            )
+          : null,
+      };
     }
     if (!candidate || candidate.score < 0.48) {
       notes.push(
@@ -210,14 +265,11 @@ export function calculateNutrition(
       );
       return { ...ingredient, nutritionMatch: null };
     }
-    const match: NutritionMatch = {
-      foodId: candidate.food.id,
-      foodName: candidate.food.name,
-      source: candidate.food.source,
-      confidence: confidence(candidate.score),
-      valuesPer100g: per100g(candidate.food),
-    };
-    if (match.confidence !== 'high')
+    const match = nutritionMatchForCandidate(
+      candidate,
+      selectedFood ? 'user' : 'automatic',
+    );
+    if (match.selectedBy === 'automatic' && match.confidence !== 'high')
       notes.push(
         `Review the ${ingredient.name || 'ingredient'} match: ${match.foodName}.`,
       );
@@ -260,6 +312,17 @@ export async function loadNutritionDatabase() {
 
 export async function estimateMealNutrition(ingredients: Ingredient[]) {
   return calculateNutrition(ingredients, await loadNutritionDatabase());
+}
+
+export async function searchNutritionFoods(
+  query: Pick<Ingredient, 'name' | 'preparation'>,
+  limit = 8,
+) {
+  return findNutritionMatches(
+    query,
+    (await loadNutritionDatabase()).foods,
+    limit,
+  );
 }
 
 export function resetNutritionDatabaseForTests() {

@@ -1,12 +1,19 @@
 import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
 import {
+  backupStateSchema,
   defaultModelSettings,
+  mealDraftSchema,
   mealEntrySchema,
   modelSettingsSchema,
+  type BackupState,
+  type MealDraft,
   type MealEntry,
   type ModelSettings,
   type StoredPhoto,
 } from './schema';
+
+const activeDraftKey = 'active-draft';
+const backupStateKey = 'backup-state';
 
 interface ScranbookDb extends DBSchema {
   entries: {
@@ -73,21 +80,34 @@ export async function getPhoto(
   return id ? (await database()).get('photos', id) : undefined;
 }
 
-export async function deleteEntry(id: string): Promise<void> {
+export async function deleteEntry(
+  id: string,
+  clearAssociatedDraft = false,
+): Promise<void> {
   const db = await database();
   const entry = await db.get('entries', id);
-  const transaction = db.transaction(['entries', 'photos'], 'readwrite');
+  const transaction = db.transaction(
+    ['entries', 'photos', 'meta'],
+    'readwrite',
+  );
   await transaction.objectStore('entries').delete(id);
   if (entry?.photoId)
     await transaction.objectStore('photos').delete(entry.photoId);
+  if (clearAssociatedDraft)
+    await transaction.objectStore('meta').delete(activeDraftKey);
   await transaction.done;
 }
 
 export async function clearDiary(): Promise<void> {
   const db = await database();
-  const transaction = db.transaction(['entries', 'photos'], 'readwrite');
+  const transaction = db.transaction(
+    ['entries', 'photos', 'meta'],
+    'readwrite',
+  );
   await transaction.objectStore('entries').clear();
   await transaction.objectStore('photos').clear();
+  await transaction.objectStore('meta').delete(activeDraftKey);
+  await transaction.objectStore('meta').delete(backupStateKey);
   await transaction.done;
 }
 
@@ -100,7 +120,10 @@ export async function replaceDiary(
   photos: StoredPhoto[],
 ): Promise<void> {
   const db = await database();
-  const transaction = db.transaction(['entries', 'photos'], 'readwrite');
+  const transaction = db.transaction(
+    ['entries', 'photos', 'meta'],
+    'readwrite',
+  );
   const entryStore = transaction.objectStore('entries');
   const photoStore = transaction.objectStore('photos');
   await entryStore.clear();
@@ -108,7 +131,44 @@ export async function replaceDiary(
   for (const entry of entries)
     await entryStore.put(mealEntrySchema.parse(entry));
   for (const photo of photos) await photoStore.put(photo);
+  await transaction.objectStore('meta').delete(activeDraftKey);
   await transaction.done;
+}
+
+export async function loadActiveDraft(): Promise<MealDraft | null> {
+  const stored = await (await database()).get('meta', activeDraftKey);
+  const parsed = mealDraftSchema.safeParse(stored);
+  if (parsed.success) return parsed.data;
+  if (stored !== undefined)
+    await (await database()).delete('meta', activeDraftKey);
+  return null;
+}
+
+export async function saveActiveDraft(draft: MealDraft): Promise<MealDraft> {
+  const parsed = mealDraftSchema.parse(draft);
+  await (await database()).put('meta', parsed, activeDraftKey);
+  return parsed;
+}
+
+export async function clearActiveDraft(): Promise<void> {
+  await (await database()).delete('meta', activeDraftKey);
+}
+
+export async function loadBackupState(): Promise<BackupState | null> {
+  const stored = await (await database()).get('meta', backupStateKey);
+  const parsed = backupStateSchema.safeParse(stored);
+  if (parsed.success) return parsed.data;
+  if (stored !== undefined)
+    await (await database()).delete('meta', backupStateKey);
+  return null;
+}
+
+export async function saveBackupState(
+  state: BackupState,
+): Promise<BackupState> {
+  const parsed = backupStateSchema.parse(state);
+  await (await database()).put('meta', parsed, backupStateKey);
+  return parsed;
 }
 
 export async function loadModelSettings(): Promise<ModelSettings> {

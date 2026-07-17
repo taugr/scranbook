@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  discoverModels,
+  endpointLocation,
   parseAnalysisResponse,
   ProviderError,
   testModelConnection,
@@ -85,6 +87,21 @@ describe('model connection diagnostics', () => {
     });
   });
 
+  it('discovers models even when the current model is not reported', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ id: 'vision-model' }] }), {
+            status: 200,
+          }),
+      ),
+    );
+    await expect(discoverModels(defaultModelSettings)).resolves.toEqual([
+      'vision-model',
+    ]);
+  });
+
   it('reports authentication failure without leaking a response body', async () => {
     vi.stubGlobal(
       'fetch',
@@ -96,5 +113,15 @@ describe('model connection diagnostics', () => {
       code: 'auth',
       status: 401,
     });
+  });
+});
+
+describe('endpoint location cues', () => {
+  it('distinguishes local, private-network, remote, and invalid addresses', () => {
+    expect(endpointLocation('http://127.0.0.1:1234/v1')).toBe('local');
+    expect(endpointLocation('http://[::1]:1234/v1')).toBe('local');
+    expect(endpointLocation('http://192.168.1.20:8080/v1')).toBe('local');
+    expect(endpointLocation('https://models.example.com/v1')).toBe('remote');
+    expect(endpointLocation('not a URL')).toBe('invalid');
   });
 });

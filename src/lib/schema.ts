@@ -29,6 +29,7 @@ export const nutritionMatchSchema = z.object({
   foodName: z.string(),
   source: z.enum(['usda_foundation', 'usda_fndds', 'uk_cofid']),
   confidence: confidenceSchema,
+  selectedBy: z.enum(['automatic', 'user']).default('automatic'),
   valuesPer100g: nutritionValuesSchema,
 });
 
@@ -41,6 +42,7 @@ export const ingredientSchema = z.object({
   confidence: confidenceSchema,
   estimatedGrams: z.number().finite().nonnegative().nullable().default(null),
   nutritionMatch: nutritionMatchSchema.nullable().default(null),
+  nutritionExcluded: z.boolean().default(false),
 });
 
 export const mealNutritionSchema = z.object({
@@ -131,6 +133,34 @@ export const archiveManifestSchema = z.object({
   ),
 });
 
+export const storedPhotoSchema = z.object({
+  id: z.string().min(1),
+  blob: z.custom<Blob>((value) => value instanceof Blob),
+  mimeType: z.string().min(1),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  byteSize: z.number().int().nonnegative(),
+  createdAt: z.string(),
+});
+
+export const mealDraftSchema = z.object({
+  format: z.literal('scranbook-draft'),
+  version: z.literal(1),
+  mode: z.enum(['new', 'edit', 'repeat']),
+  sourceEntryId: z.string().nullable(),
+  entry: mealEntrySchema,
+  photo: storedPhotoSchema.nullable(),
+  savedAt: z.string(),
+});
+
+export const backupStateSchema = z.object({
+  version: z.literal(1),
+  lastArchiveCreatedAt: z.string().nullable(),
+  entryCountAtArchive: z.number().int().nonnegative(),
+  latestEntryUpdatedAtAtArchive: z.string().nullable(),
+  reminderDismissedUntil: z.string().nullable(),
+});
+
 export type Confidence = z.infer<typeof confidenceSchema>;
 export type Classification = z.infer<typeof classificationSchema>;
 export type MealType = z.infer<typeof mealTypeSchema>;
@@ -144,6 +174,8 @@ export type MealEntry = z.infer<typeof mealEntrySchema>;
 export type ModelSettings = z.infer<typeof modelSettingsSchema>;
 export type ResponseMode = z.infer<typeof responseModeSchema>;
 export type ArchiveManifest = z.infer<typeof archiveManifestSchema>;
+export type MealDraft = z.infer<typeof mealDraftSchema>;
+export type BackupState = z.infer<typeof backupStateSchema>;
 
 export interface StoredPhoto {
   id: string;
@@ -197,4 +229,35 @@ export function createBlankEntry(now = new Date()): MealEntry {
     createdAt: timestamp,
     updatedAt: timestamp,
   };
+}
+
+export function createRepeatedEntry(
+  source: MealEntry,
+  now = new Date(),
+): MealEntry {
+  const blank = createBlankEntry(now);
+  return mealEntrySchema.parse({
+    ...blank,
+    title: source.title,
+    classification: source.classification,
+    servings: source.servings,
+    portionSummary: source.portionSummary,
+    ingredients: source.ingredients.map((ingredient) => ({
+      ...ingredient,
+      id: crypto.randomUUID(),
+    })),
+    nutrition: source.nutrition
+      ? {
+          ...source.nutrition,
+          stale: true,
+          notes: [
+            ...source.nutrition.notes,
+            'Copied from a previous meal. Recalculate after checking the portion.',
+          ],
+        }
+      : null,
+    notes: '',
+    photoId: null,
+    analysis: null,
+  });
 }

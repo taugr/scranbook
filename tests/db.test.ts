@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  clearActiveDraft,
   clearCredentials,
+  clearDiary,
   deleteEntry,
   getPhoto,
   listEntries,
+  loadActiveDraft,
+  loadBackupState,
   loadModelSettings,
   resetDatabaseForTests,
   saveEntry,
+  saveActiveDraft,
+  saveBackupState,
   saveModelSettings,
 } from '@/lib/db';
 import {
@@ -87,5 +93,72 @@ describe('local diary database', () => {
     expect(cleared.apiKey).toBe('');
     expect(cleared.extraHeaders).toEqual({});
     expect(cleared.model).toBe('google/gemma-4-e4b');
+  });
+
+  it('stores and clears an active draft with its photo blob', async () => {
+    const entry = createBlankEntry();
+    const draft = {
+      format: 'scranbook-draft' as const,
+      version: 1 as const,
+      mode: 'new' as const,
+      sourceEntryId: null,
+      entry,
+      photo: {
+        id: 'draft-photo',
+        blob: new Blob(['draft'], { type: 'image/jpeg' }),
+        mimeType: 'image/jpeg',
+        width: 1,
+        height: 1,
+        byteSize: 5,
+        createdAt: entry.createdAt,
+      },
+      savedAt: entry.updatedAt,
+    };
+    await saveActiveDraft(draft);
+    expect((await loadActiveDraft())?.photo?.byteSize).toBe(5);
+    await clearActiveDraft();
+    expect(await loadActiveDraft()).toBeNull();
+  });
+
+  it('atomically deletes an entry and its associated active draft', async () => {
+    const entry = createBlankEntry();
+    await saveEntry(entry);
+    await saveActiveDraft({
+      format: 'scranbook-draft',
+      version: 1,
+      mode: 'edit',
+      sourceEntryId: entry.id,
+      entry,
+      photo: null,
+      savedAt: entry.updatedAt,
+    });
+    await deleteEntry(entry.id, true);
+    expect(await listEntries()).toEqual([]);
+    expect(await loadActiveDraft()).toBeNull();
+  });
+
+  it('clears diary-owned draft and backup metadata', async () => {
+    const entry = createBlankEntry();
+    await saveEntry(entry);
+    await saveActiveDraft({
+      format: 'scranbook-draft',
+      version: 1,
+      mode: 'edit',
+      sourceEntryId: entry.id,
+      entry,
+      photo: null,
+      savedAt: entry.updatedAt,
+    });
+    await saveBackupState({
+      version: 1,
+      lastArchiveCreatedAt: entry.updatedAt,
+      entryCountAtArchive: 1,
+      latestEntryUpdatedAtAtArchive: entry.updatedAt,
+      reminderDismissedUntil: null,
+    });
+    await clearDiary();
+    expect(await listEntries()).toEqual([]);
+    expect(await loadActiveDraft()).toBeNull();
+    expect(await loadBackupState()).toBeNull();
   });
 });

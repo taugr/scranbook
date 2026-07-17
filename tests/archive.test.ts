@@ -38,9 +38,44 @@ describe('diary archives', () => {
     await saveEntry(entry, photo);
     const archive = await createDiaryArchive();
     await clearTestDatabase();
-    expect(await importDiaryArchive(archive)).toBe(1);
+    const result = await importDiaryArchive(archive);
+    expect(result.count).toBe(1);
+    expect(result.latestEntryUpdatedAt).toBe(entry.updatedAt);
     expect((await listEntries())[0]?.title).toBe('Soup');
     expect((await getPhoto(photo.id))?.byteSize).toBe(9);
+  });
+
+  it('imports legacy nutrition fields with current defaults', async () => {
+    const entry = createBlankEntry();
+    const zip = new JSZip();
+    zip.file(
+      'manifest.json',
+      JSON.stringify({
+        format: 'scranbook-archive',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        entries: [
+          {
+            ...entry,
+            ingredients: [
+              {
+                id: 'rice',
+                name: 'rice',
+                amount: 100,
+                unit: 'g',
+                preparation: null,
+                confidence: 'medium',
+              },
+            ],
+          },
+        ],
+        photos: [],
+      }),
+    );
+    await importDiaryArchive(await zip.generateAsync({ type: 'blob' }));
+    const ingredient = (await listEntries())[0]?.ingredients[0];
+    expect(ingredient?.nutritionExcluded).toBe(false);
+    expect(ingredient?.nutritionMatch).toBeNull();
   });
 
   it('rejects archives with unsafe photo paths', async () => {

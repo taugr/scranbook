@@ -87,6 +87,32 @@ function endpoint(baseUrl: string, path: string) {
   return `${baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 }
 
+export type EndpointLocation = 'local' | 'remote' | 'invalid';
+
+export function endpointLocation(baseUrl: string): EndpointLocation {
+  let hostname: string;
+  try {
+    hostname = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return 'invalid';
+  }
+  if (
+    hostname === 'localhost' ||
+    hostname === '::1' ||
+    hostname === '[::1]' ||
+    hostname.endsWith('.local') ||
+    hostname === 'host.docker.internal' ||
+    /^127\./.test(hostname) ||
+    /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname)
+  )
+    return 'local';
+  const private172 = hostname.match(/^172\.(\d{1,2})\./);
+  if (private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31)
+    return 'local';
+  return 'remote';
+}
+
 function headers(settings: ModelSettings) {
   return {
     'Content-Type': 'application/json',
@@ -225,7 +251,7 @@ async function assertOk(response: Response) {
   );
 }
 
-export async function testModelConnection(
+export async function discoverModels(
   settings: ModelSettings,
 ): Promise<string[]> {
   const response = await fetchWithTimeout(
@@ -239,6 +265,13 @@ export async function testModelConnection(
     data.data?.flatMap((model) =>
       typeof model.id === 'string' ? [model.id] : [],
     ) ?? [];
+  return models;
+}
+
+export async function testModelConnection(
+  settings: ModelSettings,
+): Promise<string[]> {
+  const models = await discoverModels(settings);
   if (!models.includes(settings.model)) {
     throw new ProviderError(
       'model_missing',

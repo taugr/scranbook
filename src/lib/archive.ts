@@ -8,6 +8,12 @@ import {
 
 const maximumArchiveBytes = 250 * 1024 * 1024;
 
+export interface DiaryImportResult {
+  count: number;
+  exportedAt: string;
+  latestEntryUpdatedAt: string | null;
+}
+
 function safeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
@@ -44,7 +50,9 @@ export async function createDiaryArchive(): Promise<Blob> {
   });
 }
 
-export async function importDiaryArchive(file: Blob): Promise<number> {
+export async function importDiaryArchive(
+  file: Blob,
+): Promise<DiaryImportResult> {
   if (file.size > maximumArchiveBytes)
     throw new Error('Choose a Scranbook archive smaller than 250 MB.');
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
@@ -74,7 +82,15 @@ export async function importDiaryArchive(file: Blob): Promise<number> {
     throw new Error('The archive contains an entry with a missing photo.');
   }
   await replaceDiary(manifest.entries, photos);
-  return manifest.entries.length;
+  return {
+    count: manifest.entries.length,
+    exportedAt: manifest.exportedAt,
+    latestEntryUpdatedAt:
+      manifest.entries
+        .map((entry) => entry.updatedAt)
+        .sort()
+        .at(-1) ?? null,
+  };
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {

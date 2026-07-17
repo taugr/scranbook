@@ -9,7 +9,9 @@ import {
   CircleHelp,
   Database,
   Download,
+  Globe2,
   ImagePlus,
+  Laptop,
   LoaderCircle,
   LockKeyhole,
   Pencil,
@@ -17,6 +19,7 @@ import {
   RefreshCw,
   RotateCw,
   Save,
+  Search,
   Settings,
   Sparkles,
   Trash2,
@@ -27,36 +30,63 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BrandMark } from '@/components/brand-mark';
+import { DiaryControls } from '@/components/diary-controls';
+import { NutritionMatchPicker } from '@/components/nutrition-match-picker';
 import {
   createDiaryArchive,
   downloadBlob,
   importDiaryArchive,
 } from '@/lib/archive';
 import {
+  backupStateForExport,
+  backupStateForImport,
+  dismissBackupReminder,
+  isBackupReminderDue,
+} from '@/lib/backup';
+import {
+  clearActiveDraft,
   clearCredentials,
   clearDiary,
   deleteEntry,
   getPhoto,
   listEntries,
+  loadActiveDraft,
+  loadBackupState,
   loadModelSettings,
   requestPersistentStorage,
+  saveActiveDraft,
+  saveBackupState,
   saveEntry,
   saveModelSettings,
   storageEstimate,
 } from '@/lib/db';
+import {
+  emptyDiaryFilters,
+  filterDiaryEntries,
+  hasActiveDiaryFilters,
+} from '@/lib/diary-search';
 import { processImage, rotatePhoto } from '@/lib/image';
-import { estimateMealNutrition } from '@/lib/nutrition';
+import {
+  estimateMealNutrition,
+  nutritionMatchForCandidate,
+  type NutritionCandidate,
+} from '@/lib/nutrition';
 import {
   analyseMeal,
+  discoverModels,
+  endpointLocation,
   promptVersion,
   ProviderError,
-  testModelConnection,
 } from '@/lib/provider';
 import {
   createBlankEntry,
+  createRepeatedEntry,
   defaultModelSettings,
   modelSettingsSchema,
+  type BackupState,
   type Ingredient,
+  type MealDraft,
   type MealEntry,
   type ModelSettings,
   type NutritionValues,
@@ -65,6 +95,7 @@ import {
 
 type Screen = 'diary' | 'add' | 'settings';
 type ContentScreen = Exclude<Screen, 'settings'>;
+type DiaryView = 'list' | 'detail';
 
 const mealLabels: Record<MealEntry['mealType'], string> = {
   breakfast: 'Breakfast',
@@ -161,10 +192,24 @@ export function ScranbookApp() {
   const [screen, setScreen] = useState<Screen>('diary');
   const [settingsReturnScreen, setSettingsReturnScreen] =
     useState<ContentScreen>('diary');
+  const [diaryView, setDiaryView] = useState<DiaryView>('list');
   const [entries, setEntries] = useState<MealEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filters, setFilters] = useState(emptyDiaryFilters);
   const [draft, setDraft] = useState<MealEntry>(() => createBlankEntry());
   const [pendingPhoto, setPendingPhoto] = useState<StoredPhoto | null>(null);
+  const [draftMode, setDraftMode] = useState<MealDraft['mode']>('new');
+  const [draftSourceEntryId, setDraftSourceEntryId] = useState<string | null>(
+    null,
+  );
+  const [draftReady, setDraftReady] = useState(false);
+  const [recoverableDraft, setRecoverableDraft] = useState<MealDraft | null>(
+    null,
+  );
+  const [draftPromptOpen, setDraftPromptOpen] = useState(false);
+  const [draftStatus, setDraftStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
   const [modelSettings, setModelSettings] =
     useState<ModelSettings>(defaultModelSettings);
   const [headerJson, setHeaderJson] = useState('{}');
@@ -173,10 +218,16 @@ export function ScranbookApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [storage, setStorage] = useState<StorageEstimate | null>(null);
+  const [backupState, setBackupState] = useState<BackupState | null>(null);
+  const [matchPickerIndex, setMatchPickerIndex] = useState<number | null>(null);
   const [online, setOnline] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const queuedDraftActionRef = useRef<(() => void) | null>(null);
+  const draftGenerationRef = useRef(0);
+  const draftSavePromiseRef = useRef<Promise<boolean>>(Promise.resolve(true));
   const pendingUrl = usePhotoUrl(pendingPhoto?.id ?? null, pendingPhoto);
 
   const refresh = useCallback(async () => {
@@ -186,15 +237,25 @@ export function ScranbookApp() {
     ]);
     setEntries(nextEntries);
     setStorage(nextStorage);
-    setSelectedId((current) => current ?? nextEntries[0]?.id ?? null);
+    setSelectedId((current) =>
+      current && nextEntries.some((entry) => entry.id === current)
+        ? current
+        : (nextEntries[0]?.id ?? null),
+    );
   }, []);
 
   useEffect(() => {
     async function initialize() {
       try {
-        const settings = await loadModelSettings();
+        const [settings, savedDraft, savedBackupState] = await Promise.all([
+          loadModelSettings(),
+          loadActiveDraft(),
+          loadBackupState(),
+        ]);
         setModelSettings(settings);
         setHeaderJson(JSON.stringify(settings.extraHeaders, null, 2));
+        setRecoverableDraft(savedDraft);
+        setBackupState(savedBackupState);
         await refresh();
       } catch (caught) {
         setError(errorMessage(caught));
@@ -216,6 +277,54 @@ export function ScranbookApp() {
     };
   }, [refresh]);
 
+  const persistDraft = useCallback(
+    async (
+      entry: MealEntry,
+      photo: StoredPhoto | null,
+      mode = draftMode,
+      sourceEntryId = draftSourceEntryId,
+    ) => {
+      const generation = draftGenerationRef.current;
+      const record: MealDraft = {
+        format: 'scranbook-draft',
+        version: 1,
+        mode,
+        sourceEntryId,
+        entry,
+        photo,
+        savedAt: new Date().toISOString(),
+      };
+      setDraftStatus('saving');
+      const operation = draftSavePromiseRef.current
+        .catch(() => false)
+        .then(async () => {
+          if (generation !== draftGenerationRef.current) return false;
+          const saved = await saveActiveDraft(record);
+          if (generation !== draftGenerationRef.current) return false;
+          setRecoverableDraft(saved);
+          setDraftStatus('saved');
+          return true;
+        })
+        .catch(() => {
+          if (generation === draftGenerationRef.current)
+            setDraftStatus('error');
+          return false;
+        });
+      draftSavePromiseRef.current = operation;
+      return operation;
+    },
+    [draftMode, draftSourceEntryId],
+  );
+
+  useEffect(() => {
+    if (!draftReady || screen !== 'add') return;
+    setDraftStatus('saving');
+    const timer = window.setTimeout(() => {
+      void persistDraft(draft, pendingPhoto);
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [draft, draftReady, pendingPhoto, persistDraft, screen]);
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [screen, selectedId]);
@@ -226,10 +335,21 @@ export function ScranbookApp() {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  const filteredEntries = useMemo(
+    () => filterDiaryEntries(entries, filters),
+    [entries, filters],
+  );
+  const filtersActive = hasActiveDiaryFilters(filters);
   const selected = useMemo(
     () =>
-      entries.find((entry) => entry.id === selectedId) ?? entries[0] ?? null,
-    [entries, selectedId],
+      filteredEntries.find((entry) => entry.id === selectedId) ??
+      filteredEntries[0] ??
+      null,
+    [filteredEntries, selectedId],
+  );
+  const backupDue = useMemo(
+    () => isBackupReminderDue(entries, backupState),
+    [backupState, entries],
   );
 
   function resetMessages() {
@@ -237,40 +357,101 @@ export function ScranbookApp() {
     setNotice(null);
   }
 
-  function startAdd() {
+  function beginDraft(
+    entry: MealEntry,
+    photo: StoredPhoto | null,
+    mode: MealDraft['mode'],
+    sourceEntryId: string | null,
+  ) {
     resetMessages();
-    setDraft(createBlankEntry());
-    setPendingPhoto(null);
+    setDraft(entry);
+    setPendingPhoto(photo);
+    setDraftMode(mode);
+    setDraftSourceEntryId(sourceEntryId);
+    setDraftReady(true);
+    setDraftStatus('idle');
     setScreen('add');
+    setDraftPromptOpen(false);
+  }
+
+  function requestDraftAction(action: () => void) {
+    if (recoverableDraft) {
+      queuedDraftActionRef.current = action;
+      setDraftPromptOpen(true);
+      return;
+    }
+    action();
+  }
+
+  function startAdd() {
+    if (screen === 'add' && draftReady) return;
+    requestDraftAction(() => beginDraft(createBlankEntry(), null, 'new', null));
+  }
+
+  function continueDraft() {
+    if (!recoverableDraft) return;
+    queuedDraftActionRef.current = null;
+    beginDraft(
+      recoverableDraft.entry,
+      recoverableDraft.photo,
+      recoverableDraft.mode,
+      recoverableDraft.sourceEntryId,
+    );
+  }
+
+  async function clearDraftState() {
+    setDraftReady(false);
+    draftGenerationRef.current += 1;
+    await draftSavePromiseRef.current.catch(() => undefined);
+    await clearActiveDraft();
+    setRecoverableDraft(null);
+    setDraftStatus('idle');
+  }
+
+  async function discardDraft(runQueuedAction = false) {
+    await clearDraftState();
+    setDraftPromptOpen(false);
+    if (screen === 'add') {
+      setScreen('diary');
+      setDiaryView('list');
+    }
+    const action = queuedDraftActionRef.current;
+    queuedDraftActionRef.current = null;
+    if (runQueuedAction) action?.();
+  }
+
+  async function leaveEditor() {
+    if (draftReady) {
+      const saved = await persistDraft(draft, pendingPhoto);
+      if (!saved) {
+        setError(
+          'The latest draft changes could not be saved. Save the meal or try again before leaving.',
+        );
+        return;
+      }
+    }
+    setScreen('diary');
+    setDiaryView(entries.length > 0 ? 'detail' : 'list');
   }
 
   function openSettings() {
+    if (screen === 'add' && draftReady) void persistDraft(draft, pendingPhoto);
     if (screen !== 'settings') setSettingsReturnScreen(screen);
     setScreen('settings');
   }
 
-  async function startEdit(entry: MealEntry, duplicate = false) {
-    resetMessages();
-    const photo = await getPhoto(entry.photoId);
-    const now = new Date().toISOString();
-    if (duplicate) {
-      const clonedPhoto = photo
-        ? { ...photo, id: crypto.randomUUID(), createdAt: now }
-        : null;
-      setPendingPhoto(clonedPhoto);
-      setDraft({
-        ...entry,
-        id: crypto.randomUUID(),
-        photoId: clonedPhoto?.id ?? null,
-        analysis: null,
-        createdAt: now,
-        updatedAt: now,
-      });
-    } else {
-      setPendingPhoto(photo ?? null);
-      setDraft(entry);
-    }
-    setScreen('add');
+  function startEdit(entry: MealEntry) {
+    requestDraftAction(() => {
+      void getPhoto(entry.photoId).then((photo) =>
+        beginDraft(entry, photo ?? null, 'edit', entry.id),
+      );
+    });
+  }
+
+  function startRepeat(entry: MealEntry) {
+    requestDraftAction(() =>
+      beginDraft(createRepeatedEntry(entry), null, 'repeat', entry.id),
+    );
   }
 
   async function choosePhoto(file?: File) {
@@ -283,11 +464,13 @@ export function ScranbookApp() {
         quality: modelSettings.imageQuality,
       });
       setPendingPhoto(photo);
-      setDraft((current) => ({
-        ...current,
+      const nextDraft = {
+        ...draft,
         photoId: photo.id,
         capturedAt: new Date().toISOString(),
-      }));
+      };
+      setDraft(nextDraft);
+      await persistDraft(nextDraft, photo);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -299,12 +482,21 @@ export function ScranbookApp() {
     if (!pendingPhoto) return;
     setBusy('Turning your photo…');
     try {
-      setPendingPhoto(await rotatePhoto(pendingPhoto));
+      const photo = await rotatePhoto(pendingPhoto);
+      setPendingPhoto(photo);
+      await persistDraft(draft, photo);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
       setBusy(null);
     }
+  }
+
+  async function removePendingPhoto() {
+    const nextDraft = { ...draft, photoId: null };
+    setPendingPhoto(null);
+    setDraft(nextDraft);
+    await persistDraft(nextDraft, null);
   }
 
   async function updatePrivacyAcknowledgement(checked: boolean) {
@@ -338,6 +530,7 @@ export function ScranbookApp() {
           ...ingredient,
           id: ingredient.id ?? crypto.randomUUID(),
           nutritionMatch: null,
+          nutritionExcluded: false,
         }),
       );
       let nutritionEstimate:
@@ -352,8 +545,8 @@ export function ScranbookApp() {
         }
       }
       const now = new Date().toISOString();
-      setDraft((current) => ({
-        ...current,
+      const nextDraft: MealEntry = {
+        ...draft,
         title: result.dishName,
         classification: result.classification,
         servings: result.servings,
@@ -362,8 +555,8 @@ export function ScranbookApp() {
         nutrition: nutritionEstimate?.nutrition ?? null,
         notes:
           result.uncertaintyNotes.length > 0
-            ? `${current.notes}${current.notes ? '\n\n' : ''}Model notes: ${result.uncertaintyNotes.join(' • ')}`
-            : current.notes,
+            ? `${draft.notes}${draft.notes ? '\n\n' : ''}Model notes: ${result.uncertaintyNotes.join(' • ')}`
+            : draft.notes,
         analysis: {
           model: modelSettings.model,
           endpointOrigin: new URL(modelSettings.baseUrl).origin,
@@ -371,7 +564,9 @@ export function ScranbookApp() {
           analysedAt: now,
           confidence: result.overallConfidence,
         },
-      }));
+      };
+      setDraft(nextDraft);
+      await persistDraft(nextDraft, pendingPhoto);
       setNotice(
         nutritionEstimate
           ? 'The model made a first pass and nutrition was calculated locally. Check every estimate before saving.'
@@ -397,9 +592,16 @@ export function ScranbookApp() {
     try {
       await saveEntry(entry, pendingPhoto ?? undefined);
       if (entries.length === 0) void requestPersistentStorage();
+      setDraftReady(false);
+      draftGenerationRef.current += 1;
+      await draftSavePromiseRef.current.catch(() => undefined);
+      await clearActiveDraft();
+      setRecoverableDraft(null);
+      setDraftStatus('idle');
       await refresh();
       setSelectedId(entry.id);
       setScreen('diary');
+      setDiaryView('detail');
       setNotice('Saved on this device.');
     } catch (caught) {
       setError(errorMessage(caught));
@@ -409,22 +611,50 @@ export function ScranbookApp() {
   }
 
   async function removeEntry(entry: MealEntry) {
+    const hasAssociatedEditDraft =
+      recoverableDraft?.mode === 'edit' &&
+      recoverableDraft.sourceEntryId === entry.id;
     if (
-      !window.confirm(`Delete “${entry.title}” and its photo from this device?`)
+      !window.confirm(
+        `Delete “${entry.title}” and its photo from this device?${hasAssociatedEditDraft ? ' This will also discard its unfinished edit.' : ''}`,
+      )
     )
       return;
-    await deleteEntry(entry.id);
-    setSelectedId(null);
-    await refresh();
-    setNotice('Meal deleted from this device.');
+    try {
+      if (hasAssociatedEditDraft) {
+        setDraftReady(false);
+        draftGenerationRef.current += 1;
+        await draftSavePromiseRef.current.catch(() => undefined);
+      }
+      await deleteEntry(entry.id, hasAssociatedEditDraft);
+      if (hasAssociatedEditDraft) {
+        setRecoverableDraft(null);
+        setDraftStatus('idle');
+      }
+      setSelectedId(null);
+      await refresh();
+      setNotice('Meal deleted from this device.');
+    } catch (caught) {
+      setError(`Could not delete the meal: ${errorMessage(caught)}`);
+    }
   }
 
   function updateIngredient(index: number, patch: Partial<Ingredient>) {
+    const identityChanged = 'name' in patch || 'preparation' in patch;
     setDraft((current) => ({
       ...current,
       ingredients: current.ingredients.map((ingredient, candidate) =>
         candidate === index
-          ? { ...ingredient, ...patch, nutritionMatch: null }
+          ? {
+              ...ingredient,
+              ...patch,
+              nutritionMatch: identityChanged
+                ? null
+                : ingredient.nutritionMatch,
+              nutritionExcluded: identityChanged
+                ? false
+                : ingredient.nutritionExcluded,
+            }
           : ingredient,
       ),
       nutrition: current.nutrition
@@ -459,6 +689,7 @@ export function ScranbookApp() {
           confidence: 'medium',
           estimatedGrams: null,
           nutritionMatch: null,
+          nutritionExcluded: false,
         },
       ],
       nutrition: current.nutrition
@@ -482,11 +713,13 @@ export function ScranbookApp() {
     setBusy('Calculating nutrition on this device…');
     try {
       const estimate = await estimateMealNutrition(draft.ingredients);
-      setDraft((current) => ({
-        ...current,
+      const nextDraft = {
+        ...draft,
         ingredients: estimate.ingredients,
         nutrition: estimate.nutrition,
-      }));
+      };
+      setDraft(nextDraft);
+      await persistDraft(nextDraft, pendingPhoto);
       setNotice(
         `Matched ${estimate.nutrition.matchedIngredientCount} of ${estimate.nutrition.ingredientCount} ingredients to the local database.`,
       );
@@ -496,6 +729,57 @@ export function ScranbookApp() {
       setBusy(null);
     }
   }
+
+  async function applyNutritionChoice(
+    index: number,
+    choice: NutritionCandidate | 'automatic' | 'excluded',
+  ) {
+    const ingredients = draft.ingredients.map((ingredient, candidate) => {
+      if (candidate !== index) return ingredient;
+      if (choice === 'excluded')
+        return {
+          ...ingredient,
+          nutritionMatch: null,
+          nutritionExcluded: true,
+        };
+      if (choice === 'automatic')
+        return {
+          ...ingredient,
+          nutritionMatch: null,
+          nutritionExcluded: false,
+        };
+      return {
+        ...ingredient,
+        nutritionMatch: nutritionMatchForCandidate(choice, 'user'),
+        nutritionExcluded: false,
+      };
+    });
+    setBusy('Recalculating nutrition on this device…');
+    try {
+      const estimate = await estimateMealNutrition(ingredients);
+      const nextDraft = {
+        ...draft,
+        ingredients: estimate.ingredients,
+        nutrition: estimate.nutrition,
+      };
+      setDraft(nextDraft);
+      await persistDraft(nextDraft, pendingPhoto);
+      setNotice('Nutrition match updated and totals recalculated.');
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const closeMatchPicker = useCallback(() => {
+    const index = matchPickerIndex;
+    setMatchPickerIndex(null);
+    if (index !== null)
+      window.requestAnimationFrame(() =>
+        document.getElementById(`review-match-${index}`)?.focus(),
+      );
+  }, [matchPickerIndex]);
 
   function updateNutrition(patch: Partial<NutritionValues>) {
     setDraft((current) =>
@@ -528,19 +812,50 @@ export function ScranbookApp() {
     }
   }
 
+  function updateModelSettings(settings: ModelSettings) {
+    const connectionChanged =
+      settings.baseUrl !== modelSettings.baseUrl ||
+      settings.model !== modelSettings.model ||
+      settings.apiKey !== modelSettings.apiKey ||
+      settings.responseMode !== modelSettings.responseMode;
+    setModelSettings(settings);
+    if (connectionChanged) {
+      setConnectionStatus(null);
+      setAvailableModels([]);
+    }
+  }
+
+  function updateHeaderSettings(value: string) {
+    setHeaderJson(value);
+    setConnectionStatus(null);
+    setAvailableModels([]);
+  }
+
   async function testConnection() {
     resetMessages();
     setConnectionStatus('Checking the endpoint…');
+    setAvailableModels([]);
     try {
       const parsedHeaders = JSON.parse(headerJson) as Record<string, string>;
       const settings = modelSettingsSchema.parse({
         ...modelSettings,
         extraHeaders: parsedHeaders,
       });
-      const models = await testModelConnection(settings);
-      setConnectionStatus(
-        `Connected. ${settings.model} is ready; ${models.length} model${models.length === 1 ? '' : 's'} available.`,
-      );
+      const models = await discoverModels(settings);
+      setAvailableModels(models);
+      if (models.includes(settings.model)) {
+        setConnectionStatus(
+          `Connected. ${settings.model} is available; ${models.length} model${models.length === 1 ? '' : 's'} reported.`,
+        );
+      } else if (models.length > 0) {
+        setConnectionStatus(
+          `Connected. Choose one of the ${models.length} models reported by this endpoint.`,
+        );
+      } else {
+        setConnectionStatus(
+          'Connected, but this endpoint did not report any models.',
+        );
+      }
     } catch (caught) {
       setConnectionStatus(null);
       setError(errorMessage(caught));
@@ -556,6 +871,9 @@ export function ScranbookApp() {
         blob,
         `scranbook-${new Date().toISOString().slice(0, 10)}.scranbook.zip`,
       );
+      const state = backupStateForExport(entries);
+      await saveBackupState(state);
+      setBackupState(state);
       setNotice('Diary archive created. Model credentials were not included.');
     } catch (caught) {
       setError(errorMessage(caught));
@@ -569,15 +887,23 @@ export function ScranbookApp() {
     resetMessages();
     if (
       !window.confirm(
-        'Importing replaces the diary currently stored in this browser. Continue?',
+        `Importing replaces the diary currently stored in this browser${recoverableDraft ? ' and discards the active draft' : ''}. Continue?`,
       )
     )
       return;
     setBusy('Checking and restoring your archive…');
     try {
-      const count = await importDiaryArchive(file);
+      const result = await importDiaryArchive(file);
+      const state = backupStateForImport(result);
+      await saveBackupState(state);
+      setBackupState(state);
+      setRecoverableDraft(null);
+      setDraftReady(false);
       await refresh();
-      setNotice(`Restored ${count} meal${count === 1 ? '' : 's'}.`);
+      setDiaryView('list');
+      setNotice(
+        `Restored ${result.count} meal${result.count === 1 ? '' : 's'}.`,
+      );
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -589,12 +915,16 @@ export function ScranbookApp() {
   async function removeAllDiaryData() {
     if (
       !window.confirm(
-        'Permanently delete every Scranbook entry and photo on this device?',
+        `Permanently delete every Scranbook entry and photo on this device${recoverableDraft ? ', including the active draft' : ''}?`,
       )
     )
       return;
     await clearDiary();
     setSelectedId(null);
+    setRecoverableDraft(null);
+    setDraftReady(false);
+    setBackupState(null);
+    setDiaryView('list');
     await refresh();
     setNotice('All diary entries and photos were deleted.');
   }
@@ -606,12 +936,44 @@ export function ScranbookApp() {
     setNotice('Model credentials cleared.');
   }
 
+  function applyLmStudioPreset() {
+    setModelSettings((current) => ({
+      ...current,
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      model: 'google/gemma-4-e4b',
+      apiKey: '',
+      extraHeaders: {},
+      responseMode: 'json_schema',
+      privacyAcknowledged: false,
+    }));
+    setHeaderJson('{}');
+    setConnectionStatus(null);
+    setAvailableModels([]);
+  }
+
+  function selectAvailableModel(model: string) {
+    setModelSettings((current) => ({ ...current, model }));
+    setConnectionStatus(
+      `Selected ${model}. Save settings to keep this choice.`,
+    );
+  }
+
+  async function dismissBackup() {
+    const state = dismissBackupReminder(backupState);
+    await saveBackupState(state);
+    setBackupState(state);
+  }
+
+  function selectEntry(entry: MealEntry) {
+    setSelectedId(entry.id);
+    setScreen('diary');
+    setDiaryView('detail');
+  }
+
   if (loading) {
     return (
       <main className="loading-page">
-        <div className="brand-mark">
-          <Utensils />
-        </div>
+        <BrandMark />
         <p>Opening your scranbook…</p>
       </main>
     );
@@ -622,12 +984,13 @@ export function ScranbookApp() {
       <header className="app-header">
         <button
           className="wordmark"
-          onClick={() => setScreen('diary')}
+          onClick={() => {
+            setScreen('diary');
+            setDiaryView('list');
+          }}
           aria-label="Open diary"
         >
-          <span className="brand-mark">
-            <Utensils />
-          </span>
+          <BrandMark />
           <span>
             <strong>scranbook</strong>
             <small>your kitchen notebook</small>
@@ -674,20 +1037,32 @@ export function ScranbookApp() {
               <h2>Your diary</h2>
             </div>
           </div>
+          {entries.length > 0 && (
+            <DiaryControls
+              filters={filters}
+              resultCount={filteredEntries.length}
+              totalCount={entries.length}
+              onChange={setFilters}
+            />
+          )}
+          {recoverableDraft && (
+            <DraftCard
+              draft={recoverableDraft}
+              onContinue={continueDraft}
+              onDiscard={() => void discardDraft()}
+            />
+          )}
           {entries.length === 0 ? (
             <div className="rail-empty">
               <span>Nothing tucked in yet.</span>
             </div>
-          ) : (
+          ) : filteredEntries.length > 0 ? (
             <div className="rail-list">
-              {entries.map((entry) => (
+              {filteredEntries.map((entry) => (
                 <button
                   key={entry.id}
                   className={`rail-entry ${selected?.id === entry.id ? 'rail-entry--selected' : ''}`}
-                  onClick={() => {
-                    setSelectedId(entry.id);
-                    setScreen('diary');
-                  }}
+                  onClick={() => selectEntry(entry)}
                 >
                   <MealPhoto entry={entry} />
                   <span>
@@ -700,6 +1075,8 @@ export function ScranbookApp() {
                 </button>
               ))}
             </div>
+          ) : (
+            <NoDiaryResults onClear={() => setFilters(emptyDiaryFilters)} />
           )}
           <button className="rail-settings" onClick={openSettings}>
             <Settings /> Settings & privacy
@@ -708,29 +1085,101 @@ export function ScranbookApp() {
 
         <main className="main-stage">
           {screen === 'diary' &&
-            (selected ? (
-              <EntryDetail
-                entry={selected}
-                onEdit={() => void startEdit(selected)}
-                onDuplicate={() => void startEdit(selected, true)}
-                onDelete={() => void removeEntry(selected)}
+            entries.length === 0 &&
+            (recoverableDraft ? (
+              <DraftRecoveryPage
+                draft={recoverableDraft}
+                onContinue={continueDraft}
+                onDiscard={() => void discardDraft()}
               />
             ) : (
               <EmptyDiary onAdd={startAdd} />
             ))}
+          {screen === 'diary' && entries.length > 0 && (
+            <>
+              <section
+                className={`mobile-diary-index ${diaryView === 'detail' ? 'mobile-hidden' : ''}`}
+                aria-label="Your diary"
+              >
+                <div className="mobile-diary-heading">
+                  <p className="eyebrow">The recent pages</p>
+                  <h1>Your diary</h1>
+                </div>
+                <DiaryControls
+                  filters={filters}
+                  resultCount={filteredEntries.length}
+                  totalCount={entries.length}
+                  onChange={setFilters}
+                />
+                {recoverableDraft && (
+                  <DraftCard
+                    draft={recoverableDraft}
+                    onContinue={continueDraft}
+                    onDiscard={() => void discardDraft()}
+                  />
+                )}
+                {backupDue && (
+                  <BackupReminder
+                    onExport={() => void exportDiary()}
+                    onDismiss={() => void dismissBackup()}
+                  />
+                )}
+                {filteredEntries.length > 0 ? (
+                  <div className="mobile-entry-list">
+                    {filteredEntries.map((entry) => (
+                      <button
+                        key={entry.id}
+                        className="mobile-entry"
+                        onClick={() => selectEntry(entry)}
+                      >
+                        <MealPhoto entry={entry} />
+                        <span>
+                          <small>
+                            {formatDate(entry.eatenAt)} ·{' '}
+                            {formatTime(entry.eatenAt)}
+                          </small>
+                          <strong>{entry.title}</strong>
+                          <em>{entry.portionSummary || 'A saved meal'}</em>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <NoDiaryResults
+                    onClear={() => setFilters(emptyDiaryFilters)}
+                  />
+                )}
+              </section>
+              <div
+                className={`diary-detail-shell ${diaryView === 'list' ? 'mobile-hidden' : ''}`}
+              >
+                {selected ? (
+                  <EntryDetail
+                    entry={selected}
+                    onBack={() => setDiaryView('list')}
+                    onEdit={() => startEdit(selected)}
+                    onRepeat={() => startRepeat(selected)}
+                    onDelete={() => void removeEntry(selected)}
+                  />
+                ) : filtersActive ? (
+                  <NoDiaryResults
+                    onClear={() => setFilters(emptyDiaryFilters)}
+                  />
+                ) : null}
+              </div>
+            </>
+          )}
           {screen === 'add' && (
             <MealEditor
               draft={draft}
               photoUrl={pendingUrl}
               busy={busy}
+              draftStatus={draftStatus}
               settings={modelSettings}
-              onBack={() => setScreen('diary')}
+              onBack={() => void leaveEditor()}
               onFile={(file) => void choosePhoto(file)}
               onRotate={() => void rotatePendingPhoto()}
-              onRemovePhoto={() => {
-                setPendingPhoto(null);
-                setDraft((current) => ({ ...current, photoId: null }));
-              }}
+              onRemovePhoto={() => void removePendingPhoto()}
               onAnalyse={() => void analyse()}
               onCancelAnalyse={() => abortRef.current?.abort()}
               onPrivacyChange={(checked) =>
@@ -741,6 +1190,7 @@ export function ScranbookApp() {
               onIngredientRemove={removeIngredient}
               onIngredientAdd={addIngredient}
               onCalculateNutrition={() => void calculateDraftNutrition()}
+              onReviewNutritionMatch={setMatchPickerIndex}
               onNutritionChange={updateNutrition}
               onSave={() => void saveDraft()}
               onOpenSettings={openSettings}
@@ -753,17 +1203,23 @@ export function ScranbookApp() {
               storage={storage}
               entryCount={entries.length}
               connectionStatus={connectionStatus}
+              availableModels={availableModels}
+              backupState={backupState}
+              backupDue={backupDue}
               returnScreen={settingsReturnScreen}
               onClose={() => setScreen(settingsReturnScreen)}
-              onSettingsChange={setModelSettings}
-              onHeaderJsonChange={setHeaderJson}
+              onSettingsChange={updateModelSettings}
+              onHeaderJsonChange={updateHeaderSettings}
               onSave={() => void saveSettings()}
               onTest={() => void testConnection()}
+              onLmStudioPreset={applyLmStudioPreset}
+              onAvailableModelChange={selectAvailableModel}
               onExport={() => void exportDiary()}
               onImport={(file) => void importDiary(file)}
               importRef={importRef}
               onClearDiary={() => void removeAllDiaryData()}
               onClearCredentials={() => void removeCredentials()}
+              onDismissBackup={() => void dismissBackup()}
             />
           )}
         </main>
@@ -772,7 +1228,10 @@ export function ScranbookApp() {
       <nav className="mobile-nav" aria-label="Main navigation">
         <button
           className={screen === 'diary' ? 'active' : ''}
-          onClick={() => setScreen('diary')}
+          onClick={() => {
+            setScreen('diary');
+            setDiaryView('list');
+          }}
         >
           <BookOpen />
           <span>Diary</span>
@@ -796,7 +1255,190 @@ export function ScranbookApp() {
           <span>{busy}</span>
         </div>
       )}
+      {draftPromptOpen && recoverableDraft && (
+        <DraftPrompt
+          draft={recoverableDraft}
+          onContinue={continueDraft}
+          onDiscard={() => void discardDraft(true)}
+          onClose={() => {
+            queuedDraftActionRef.current = null;
+            setDraftPromptOpen(false);
+          }}
+        />
+      )}
+      {matchPickerIndex !== null && draft.ingredients[matchPickerIndex] && (
+        <NutritionMatchPicker
+          ingredient={draft.ingredients[matchPickerIndex]}
+          onChoose={(candidate) => {
+            void applyNutritionChoice(matchPickerIndex, candidate).then(
+              closeMatchPicker,
+            );
+          }}
+          onExclude={() => {
+            void applyNutritionChoice(matchPickerIndex, 'excluded').then(
+              closeMatchPicker,
+            );
+          }}
+          onAutomatic={() => {
+            void applyNutritionChoice(matchPickerIndex, 'automatic').then(
+              closeMatchPicker,
+            );
+          }}
+          onClose={closeMatchPicker}
+        />
+      )}
     </div>
+  );
+}
+
+function DraftCard({
+  draft,
+  onContinue,
+  onDiscard,
+}: {
+  draft: MealDraft;
+  onContinue: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <section className="draft-card" aria-label="Saved meal draft">
+      <p className="eyebrow">Saved on this device</p>
+      <strong>{draft.entry.title || 'Untitled meal draft'}</strong>
+      <small>
+        {draft.mode === 'edit'
+          ? 'Editing a saved meal'
+          : draft.mode === 'repeat'
+            ? 'Logging a meal again'
+            : 'New meal'}{' '}
+        · {formatTime(draft.savedAt)}
+      </small>
+      <div>
+        <button className="button button--primary" onClick={onContinue}>
+          Continue draft
+        </button>
+        <button className="text-button" onClick={onDiscard}>
+          Discard
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function DraftPrompt({
+  draft,
+  onContinue,
+  onDiscard,
+  onClose,
+}: {
+  draft: MealDraft;
+  onContinue: () => void;
+  onDiscard: () => void;
+  onClose: () => void;
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section
+        className="draft-prompt"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="draft-prompt-heading"
+      >
+        <button
+          ref={closeRef}
+          className="dialog-close"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          <X />
+        </button>
+        <p className="eyebrow">One page is still open</p>
+        <h2 id="draft-prompt-heading">
+          Continue {draft.entry.title || 'your meal draft'}?
+        </h2>
+        <p>
+          Scranbook kept this unfinished meal on this device. Continue it, or
+          discard it before starting something else.
+        </p>
+        <div>
+          <button className="button button--primary" onClick={onContinue}>
+            Continue draft
+          </button>
+          <button className="button button--danger" onClick={onDiscard}>
+            Discard and continue
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function BackupReminder({
+  onExport,
+  onDismiss,
+}: {
+  onExport: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <section className="backup-reminder">
+      <Download />
+      <div>
+        <strong>Keep a copy of your diary</strong>
+        <p>
+          Scranbook has no server backup. Create an archive you can keep
+          somewhere safe.
+        </p>
+        <div>
+          <button className="button button--quiet" onClick={onExport}>
+            Create archive
+          </button>
+          <button className="text-button" onClick={onDismiss}>
+            Remind me later
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function NoDiaryResults({ onClear }: { onClear: () => void }) {
+  return (
+    <section className="no-diary-results">
+      <Search />
+      <strong>No pages matched</strong>
+      <p>Try a different word, date, meal, or image kind.</p>
+      <button className="text-button" onClick={onClear}>
+        Clear filters
+      </button>
+    </section>
+  );
+}
+
+function DraftRecoveryPage({
+  draft,
+  onContinue,
+  onDiscard,
+}: {
+  draft: MealDraft;
+  onContinue: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <section className="draft-recovery-page">
+      <p className="eyebrow">Kept safe on this device</p>
+      <h1>Continue where you left off.</h1>
+      <p>Your unfinished meal is ready whenever you are.</p>
+      <DraftCard draft={draft} onContinue={onContinue} onDiscard={onDiscard} />
+    </section>
   );
 }
 
@@ -830,17 +1472,22 @@ function EmptyDiary({ onAdd }: { onAdd: () => void }) {
 
 function EntryDetail({
   entry,
+  onBack,
   onEdit,
-  onDuplicate,
+  onRepeat,
   onDelete,
 }: {
   entry: MealEntry;
+  onBack: () => void;
   onEdit: () => void;
-  onDuplicate: () => void;
+  onRepeat: () => void;
   onDelete: () => void;
 }) {
   return (
     <article className="entry-detail">
+      <button className="entry-mobile-back" onClick={onBack}>
+        <ChevronLeft /> Diary
+      </button>
       <div className="entry-hero">
         <MealPhoto entry={entry} />
         <div className="entry-date">
@@ -885,8 +1532,14 @@ function EntryDetail({
                     )}
                     {ingredient.nutritionMatch && (
                       <small>
-                        Matched to {ingredient.nutritionMatch.foodName}
+                        {ingredient.nutritionMatch.selectedBy === 'user'
+                          ? 'Chosen by you'
+                          : 'Matched'}{' '}
+                        · {ingredient.nutritionMatch.foodName}
                       </small>
+                    )}
+                    {ingredient.nutritionExcluded && (
+                      <small>Excluded from nutrition by you</small>
                     )}
                   </span>
                   <span className="ingredient-amount">
@@ -912,8 +1565,8 @@ function EntryDetail({
           </section>
         )}
         <div className="entry-actions">
-          <button className="button button--quiet" onClick={onDuplicate}>
-            <RefreshCw /> Duplicate
+          <button className="button button--quiet" onClick={onRepeat}>
+            <RefreshCw /> Log again
           </button>
           <button className="button button--danger" onClick={onDelete}>
             <Trash2 /> Delete
@@ -993,6 +1646,7 @@ function MealEditor({
   draft,
   photoUrl,
   busy,
+  draftStatus,
   settings,
   onBack,
   onFile,
@@ -1006,6 +1660,7 @@ function MealEditor({
   onIngredientRemove,
   onIngredientAdd,
   onCalculateNutrition,
+  onReviewNutritionMatch,
   onNutritionChange,
   onSave,
   onOpenSettings,
@@ -1013,6 +1668,7 @@ function MealEditor({
   draft: MealEntry;
   photoUrl: string | null;
   busy: string | null;
+  draftStatus: 'idle' | 'saving' | 'saved' | 'error';
   settings: ModelSettings;
   onBack: () => void;
   onFile: (file?: File) => void;
@@ -1026,6 +1682,7 @@ function MealEditor({
   onIngredientRemove: (index: number) => void;
   onIngredientAdd: () => void;
   onCalculateNutrition: () => void;
+  onReviewNutritionMatch: (index: number) => void;
   onNutritionChange: (patch: Partial<NutritionValues>) => void;
   onSave: () => void;
   onOpenSettings: () => void;
@@ -1039,6 +1696,18 @@ function MealEditor({
         <div>
           <p className="eyebrow">A new page</p>
           <h1>Add a meal</h1>
+          <p
+            className={`draft-status draft-status--${draftStatus}`}
+            aria-live="polite"
+          >
+            {draftStatus === 'saving'
+              ? 'Saving draft…'
+              : draftStatus === 'saved'
+                ? 'Draft saved on this device'
+                : draftStatus === 'error'
+                  ? 'Draft could not be saved; you can still save the meal.'
+                  : 'Changes are saved locally as you work.'}
+          </p>
         </div>
       </div>
       <div className="editor-grid">
@@ -1050,9 +1719,10 @@ function MealEditor({
                 <button onClick={onRotate}>
                   <RotateCw /> Rotate
                 </button>
-                <label>
+                <label className="file-picker">
                   <ImagePlus /> Replace
                   <input
+                    className="visually-hidden"
                     type="file"
                     accept="image/*"
                     capture="environment"
@@ -1065,7 +1735,7 @@ function MealEditor({
               </div>
             </div>
           ) : (
-            <label className="camera-drop">
+            <label className="camera-drop file-picker">
               <span className="camera-orbit">
                 <Camera />
               </span>
@@ -1075,6 +1745,7 @@ function MealEditor({
                 <ImagePlus /> Choose photo
               </span>
               <input
+                className="visually-hidden"
                 type="file"
                 accept="image/*"
                 capture="environment"
@@ -1126,6 +1797,10 @@ function MealEditor({
                   Model settings
                 </button>
               </div>
+              <p className="manual-entry-note">
+                Prefer not to use a model? Keep filling in the meal manually;
+                analysis is always optional.
+              </p>
             </div>
           )}
         </div>
@@ -1334,14 +2009,49 @@ function MealEditor({
                   />
                 </label>
                 {ingredient.nutritionMatch && (
-                  <p className="nutrition-match">
-                    <Database /> {ingredient.nutritionMatch.foodName} ·{' '}
-                    {ingredient.nutritionMatch.source === 'uk_cofid'
-                      ? 'UK CoFID'
-                      : 'USDA FoodData Central'}{' '}
-                    · {ingredient.nutritionMatch.confidence} match
-                  </p>
+                  <div className="nutrition-match">
+                    <p>
+                      <Database /> {ingredient.nutritionMatch.foodName} ·{' '}
+                      {ingredient.nutritionMatch.source === 'uk_cofid'
+                        ? 'UK CoFID'
+                        : 'USDA FoodData Central'}{' '}
+                      ·{' '}
+                      {ingredient.nutritionMatch.selectedBy === 'user'
+                        ? 'chosen by you'
+                        : `${ingredient.nutritionMatch.confidence} automatic match`}
+                    </p>
+                    <button
+                      id={`review-match-${index}`}
+                      className="text-button"
+                      onClick={() => onReviewNutritionMatch(index)}
+                    >
+                      Review match
+                    </button>
+                  </div>
                 )}
+                {ingredient.nutritionExcluded && (
+                  <div className="nutrition-match nutrition-match--excluded">
+                    <p>Excluded from nutrition by you.</p>
+                    <button
+                      id={`review-match-${index}`}
+                      className="text-button"
+                      onClick={() => onReviewNutritionMatch(index)}
+                    >
+                      Review choice
+                    </button>
+                  </div>
+                )}
+                {!ingredient.nutritionMatch &&
+                  !ingredient.nutritionExcluded &&
+                  ingredient.name && (
+                    <button
+                      id={`review-match-${index}`}
+                      className="text-button find-match"
+                      onClick={() => onReviewNutritionMatch(index)}
+                    >
+                      <Database /> Find a local food match
+                    </button>
+                  )}
               </div>
             ))}
             <button className="add-row" onClick={onIngredientAdd}>
@@ -1479,35 +2189,51 @@ function SettingsPanel({
   storage,
   entryCount,
   connectionStatus,
+  availableModels,
+  backupState,
+  backupDue,
   returnScreen,
   onClose,
   onSettingsChange,
   onHeaderJsonChange,
   onSave,
   onTest,
+  onLmStudioPreset,
+  onAvailableModelChange,
   onExport,
   onImport,
   importRef,
   onClearDiary,
   onClearCredentials,
+  onDismissBackup,
 }: {
   settings: ModelSettings;
   headerJson: string;
   storage: StorageEstimate | null;
   entryCount: number;
   connectionStatus: string | null;
+  availableModels: string[];
+  backupState: BackupState | null;
+  backupDue: boolean;
   returnScreen: ContentScreen;
   onClose: () => void;
   onSettingsChange: (settings: ModelSettings) => void;
   onHeaderJsonChange: (value: string) => void;
   onSave: () => void;
   onTest: () => void;
+  onLmStudioPreset: () => void;
+  onAvailableModelChange: (model: string) => void;
   onExport: () => void;
   onImport: (file?: File) => void;
   importRef: React.RefObject<HTMLInputElement | null>;
   onClearDiary: () => void;
   onClearCredentials: () => void;
+  onDismissBackup: () => void;
 }) {
+  const [setupRoute, setSetupRoute] = useState<'lm-studio' | 'custom'>(() =>
+    settings.baseUrl === 'http://127.0.0.1:1234/v1' ? 'lm-studio' : 'custom',
+  );
+  const location = endpointLocation(settings.baseUrl);
   return (
     <section className="settings-page">
       <div className="stage-heading">
@@ -1532,81 +2258,180 @@ function SettingsPanel({
               <Sparkles />
             </span>
             <div>
-              <h2>Vision model</h2>
-              <p>Any compatible endpoint can be your kitchen assistant.</p>
+              <h2>Vision assistance</h2>
+              <p>Optional help from a model you choose.</p>
             </div>
           </div>
-          <label>
-            <span>Base URL</span>
-            <input
-              value={settings.baseUrl}
-              onChange={(event) =>
-                onSettingsChange({ ...settings, baseUrl: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            <span>Model ID</span>
-            <input
-              value={settings.model}
-              onChange={(event) =>
-                onSettingsChange({ ...settings, model: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            <span>
-              API key <small>optional</small>
-            </span>
-            <input
-              type="password"
-              autoComplete="off"
-              value={settings.apiKey}
-              placeholder="Not needed for most local models"
-              onChange={(event) =>
-                onSettingsChange({ ...settings, apiKey: event.target.value })
-              }
-            />
-          </label>
-          <div className="field-row">
-            <label>
-              <span>Credential storage</span>
-              <select
-                value={settings.credentialStorage}
-                onChange={(event) =>
-                  onSettingsChange({
-                    ...settings,
-                    credentialStorage: event.target
-                      .value as ModelSettings['credentialStorage'],
-                  })
-                }
-              >
-                <option value="device">This device</option>
-                <option value="session">This tab session</option>
-              </select>
-            </label>
-            <label>
-              <span>Response mode</span>
-              <select
-                value={settings.responseMode}
-                onChange={(event) =>
-                  onSettingsChange({
-                    ...settings,
-                    responseMode: event.target
-                      .value as ModelSettings['responseMode'],
-                  })
-                }
-              >
-                <option value="json_object">JSON object</option>
-                <option value="json_schema">Strict JSON schema</option>
-                <option value="text">Tolerant text</option>
-              </select>
-            </label>
+          <div className="manual-model-callout">
+            <BookOpen />
+            <p>
+              <strong>Manual entry always works.</strong> You do not need a
+              model to keep your diary or calculate nutrition locally.
+            </p>
           </div>
-          <details>
-            <summary>Advanced request headers</summary>
+          <div
+            className="model-route-picker"
+            role="group"
+            aria-label="Model connection"
+          >
+            <button
+              type="button"
+              className={
+                setupRoute === 'lm-studio'
+                  ? 'model-route model-route--selected'
+                  : 'model-route'
+              }
+              aria-pressed={setupRoute === 'lm-studio'}
+              onClick={() => {
+                setSetupRoute('lm-studio');
+                onLmStudioPreset();
+              }}
+            >
+              <Laptop />
+              <span>
+                <strong>LM Studio</strong>
+                <small>Quick setup for a model running on this device</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={
+                setupRoute === 'custom'
+                  ? 'model-route model-route--selected'
+                  : 'model-route'
+              }
+              aria-pressed={setupRoute === 'custom'}
+              onClick={() => setSetupRoute('custom')}
+            >
+              <Globe2 />
+              <span>
+                <strong>Custom compatible endpoint</strong>
+                <small>
+                  Use another local or hosted OpenAI-compatible service
+                </small>
+              </span>
+            </button>
+          </div>
+          {setupRoute === 'lm-studio' ? (
+            <div className="model-route-panel">
+              <p>
+                The local preset is applied. Start LM Studio's server and allow
+                browser requests, then test the connection below.
+              </p>
+              <dl>
+                <div>
+                  <dt>Endpoint</dt>
+                  <dd>http://127.0.0.1:1234/v1</dd>
+                </div>
+                <div>
+                  <dt>Model</dt>
+                  <dd>{settings.model}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : (
+            <div className="custom-model-fields">
+              <p>
+                Connect to any browser-accessible service that implements the
+                OpenAI-compatible models and chat-completions endpoints.
+              </p>
+              <label>
+                <span>Base URL</span>
+                <input
+                  value={settings.baseUrl}
+                  placeholder="https://example.com/v1"
+                  onChange={(event) =>
+                    onSettingsChange({
+                      ...settings,
+                      baseUrl: event.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <span>Model ID</span>
+                <input
+                  value={settings.model}
+                  onChange={(event) =>
+                    onSettingsChange({ ...settings, model: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>
+                  API key <small>optional</small>
+                </span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={settings.apiKey}
+                  placeholder="Not needed for most local models"
+                  onChange={(event) =>
+                    onSettingsChange({
+                      ...settings,
+                      apiKey: event.target.value,
+                    })
+                  }
+                />
+              </label>
+            </div>
+          )}
+          <div className={`endpoint-location endpoint-location--${location}`}>
+            {location === 'local' ? <Laptop /> : <Globe2 />}
+            <p>
+              <strong>
+                {location === 'local'
+                  ? 'Appears local'
+                  : location === 'remote'
+                    ? 'Remote endpoint'
+                    : 'Check the endpoint address'}
+              </strong>
+              {location === 'local'
+                ? ' This address appears to be on this device or your local network. Photos go directly to it.'
+                : location === 'remote'
+                  ? ' Analysed photos leave this device and go directly to this service.'
+                  : ' Enter a complete http:// or https:// Base URL before testing.'}
+            </p>
+          </div>
+          <details className="model-config-details">
+            <summary>Advanced settings</summary>
+            <div className="field-row">
+              <label>
+                <span>Credential storage</span>
+                <select
+                  value={settings.credentialStorage}
+                  onChange={(event) =>
+                    onSettingsChange({
+                      ...settings,
+                      credentialStorage: event.target
+                        .value as ModelSettings['credentialStorage'],
+                    })
+                  }
+                >
+                  <option value="device">This device</option>
+                  <option value="session">This tab session</option>
+                </select>
+              </label>
+              <label>
+                <span>Response mode</span>
+                <select
+                  value={settings.responseMode}
+                  onChange={(event) =>
+                    onSettingsChange({
+                      ...settings,
+                      responseMode: event.target
+                        .value as ModelSettings['responseMode'],
+                    })
+                  }
+                >
+                  <option value="json_object">JSON object</option>
+                  <option value="json_schema">Strict JSON schema</option>
+                  <option value="text">Tolerant text</option>
+                </select>
+              </label>
+            </div>
             <label>
-              <span>JSON object</span>
+              <span>Additional request headers (JSON)</span>
               <textarea
                 rows={4}
                 value={headerJson}
@@ -1643,13 +2468,37 @@ function SettingsPanel({
               <Check /> {connectionStatus}
             </p>
           )}
+          {availableModels.length > 0 && (
+            <label className="available-models">
+              <span>Models reported by this endpoint</span>
+              <select
+                value={
+                  availableModels.includes(settings.model) ? settings.model : ''
+                }
+                onChange={(event) => onAvailableModelChange(event.target.value)}
+              >
+                <option value="" disabled>
+                  Choose a reported model
+                </option>
+                {availableModels.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+              <small>
+                The endpoint reports availability, not whether every model can
+                analyse images. A photo is sent only when you choose Analyse.
+              </small>
+            </label>
+          )}
           <div className="local-model-tip">
             <CircleHelp />
             <p>
-              <strong>Using LM Studio?</strong> Start its local server, enable
-              requests from your browser, and use{' '}
-              <code>http://127.0.0.1:1234/v1</code>. A deployed HTTPS PWA may
-              face browser-specific local-network restrictions.
+              <strong>Browser connection note.</strong> The endpoint must allow
+              requests from this app. A deployed HTTPS PWA may face CORS,
+              mixed-content, or local-network restrictions even when the same
+              endpoint works from a desktop client.
             </p>
           </div>
         </div>
@@ -1681,10 +2530,11 @@ function SettingsPanel({
               <button className="button button--quiet" onClick={onExport}>
                 <Download /> Export diary
               </button>
-              <label className="button button--quiet">
+              <label className="button button--quiet file-picker">
                 <Upload /> Import archive
                 <input
                   ref={importRef}
+                  className="visually-hidden"
                   type="file"
                   accept=".zip,.scranbook.zip,application/zip"
                   onChange={(event) => onImport(event.target.files?.[0])}
@@ -1695,6 +2545,15 @@ function SettingsPanel({
               Exports include entries and processed photos, but never model
               credentials.
             </p>
+            {backupState?.lastArchiveCreatedAt && (
+              <p className="last-archive">
+                Most recent known archive:{' '}
+                <strong>{formatDate(backupState.lastArchiveCreatedAt)}</strong>
+              </p>
+            )}
+            {backupDue && (
+              <BackupReminder onExport={onExport} onDismiss={onDismissBackup} />
+            )}
           </div>
           <div className="settings-card">
             <h2>Privacy controls</h2>

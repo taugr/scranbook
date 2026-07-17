@@ -1,7 +1,13 @@
 # Scranbook Product and Architecture Specification
 
 Status: MVP implemented and deployed; maintained as the product decision record
-Last updated: 2026-07-12
+Last updated: 2026-07-18
+
+Near-term product work is defined in
+[next-features-plan.md](./next-features-plan.md).
+
+A follow-on packaged-food workflow is planned in
+[nutrition-label-scanner-plan.md](./nutrition-label-scanner-plan.md).
 
 ## 1. Product goal
 
@@ -368,8 +374,9 @@ pnpm run cloudflare:preview
 
 ## 13. MVP delivery record
 
-The initial release completed the following phases. Future work belongs in
-section 17 rather than being added to this historical delivery sequence.
+The initial release completed the following phases. Near-term work belongs in
+the next-features plan, while explicitly deferred work remains in section 17,
+rather than either being added to this historical delivery sequence.
 
 ### Phase 1: Scaffold and specification
 
@@ -477,7 +484,7 @@ live production AI is not a release gate.
 - Do not calculate nutrition automatically for recipe cards or unclear images.
 - Preserve legacy entries and archives by defaulting missing nutrition fields.
 
-## 17. Deferred work
+## 17. Deferred work not included in the current plan
 
 - Micronutrient detail, allergens, or medical guidance.
 - Accounts, cross-device sync, sharing, social features, or server backups.

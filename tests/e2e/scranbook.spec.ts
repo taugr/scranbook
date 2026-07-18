@@ -331,7 +331,7 @@ test('recovers an unfinished nutrition label draft with its photo', async ({
     .first()
     .getByLabel('Amount')
     .fill('250');
-  await expect(page.getByText('Draft saved on this device')).toBeVisible();
+  await expect(page.getByText('Draft saved')).toBeVisible();
 
   await page.reload();
   await expect(
@@ -468,7 +468,7 @@ test('recovers an unfinished meal with its photo after reload', async ({
     .locator('input[type="file"]')
     .first()
     .setInputFiles('public/icon-192.png');
-  await expect(page.getByText('Draft saved on this device')).toBeVisible();
+  await expect(page.getByText('Draft saved')).toBeVisible();
 
   await page.reload();
   await expect(
@@ -490,7 +490,7 @@ test('deleting a meal also removes its unfinished edit draft', async ({
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: 'Edit' }).click();
   await page.getByLabel('What was it?').fill('Unfinished edited meal');
-  await expect(page.getByText('Draft saved on this device')).toBeVisible();
+  await expect(page.getByText('Draft saved')).toBeVisible();
   await page.locator('.back-button').click();
   await openSavedEntry(page, 'Meal to delete');
   page.once('dialog', (dialog) => dialog.accept());

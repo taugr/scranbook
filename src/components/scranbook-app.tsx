@@ -1239,7 +1239,7 @@ export function ScranbookApp() {
         <aside className="diary-rail">
           <div className="rail-heading">
             <div>
-              <p className="eyebrow">The recent pages</p>
+              <p className="eyebrow">Recent meals</p>
               <h2>Your diary</h2>
             </div>
           </div>
@@ -1308,7 +1308,7 @@ export function ScranbookApp() {
                 aria-label="Your diary"
               >
                 <div className="mobile-diary-heading">
-                  <p className="eyebrow">The recent pages</p>
+                  <p className="eyebrow">Recent meals</p>
                   <h1>Your diary</h1>
                 </div>
                 <DiaryControls
@@ -1512,7 +1512,7 @@ function DraftCard({
 }) {
   return (
     <section className="draft-card" aria-label="Saved meal draft">
-      <p className="eyebrow">Saved on this device</p>
+      <p className="eyebrow">Meal draft</p>
       <strong>{draft.entry.title || 'Untitled meal draft'}</strong>
       <small>
         {draft.mode === 'edit'
@@ -1570,7 +1570,7 @@ function DraftPrompt({
         >
           <X />
         </button>
-        <p className="eyebrow">One page is still open</p>
+        <p className="eyebrow">Unfinished meal</p>
         <h2 id="draft-prompt-heading">
           Continue {draft.entry.title || 'your meal draft'}?
         </h2>
@@ -1624,7 +1624,7 @@ function NoDiaryResults({ onClear }: { onClear: () => void }) {
   return (
     <section className="no-diary-results">
       <Search />
-      <strong>No pages matched</strong>
+      <strong>No meals matched</strong>
       <p>Try a different word, date, meal, or image kind.</p>
       <button className="text-button" onClick={onClear}>
         Clear filters
@@ -1644,7 +1644,6 @@ function DraftRecoveryPage({
 }) {
   return (
     <section className="draft-recovery-page">
-      <p className="eyebrow">Kept safe on this device</p>
       <h1>Continue where you left off.</h1>
       <p>Your unfinished meal is ready whenever you are.</p>
       <DraftCard draft={draft} onContinue={onContinue} onDiscard={onDiscard} />
@@ -1655,26 +1654,31 @@ function DraftRecoveryPage({
 function EmptyDiary({ onAdd }: { onAdd: () => void }) {
   return (
     <section className="empty-diary">
+      <div className="empty-diary-copy">
+        <p className="eyebrow">Your food diary</p>
+        <h1>Remember the meals that made your day.</h1>
+        <p>
+          Photograph a plate, check the model’s best guess, or jot it down
+          yourself. Everything stays in this browser.
+        </p>
+        <button
+          className="button button--primary button--large"
+          onClick={onAdd}
+        >
+          <Camera /> Add your first meal
+        </button>
+        <div className="privacy-note">
+          <LockKeyhole />
+          <span>
+            <strong>Private by design.</strong> Scranbook has no account and no
+            diary server.
+          </span>
+        </div>
+      </div>
       <div className="empty-illustration" aria-hidden="true">
         <span>✦</span>
         <Utensils />
         <i />
-      </div>
-      <p className="eyebrow">A fresh page</p>
-      <h1>Remember the meals that made your day.</h1>
-      <p>
-        Photograph a plate, check the model’s best guess, or jot it down
-        yourself. Everything stays in this browser.
-      </p>
-      <button className="button button--primary button--large" onClick={onAdd}>
-        <Camera /> Add your first meal
-      </button>
-      <div className="privacy-note">
-        <LockKeyhole />
-        <span>
-          <strong>Private by design.</strong> Scranbook has no account and no
-          diary server.
-        </span>
       </div>
     </section>
   );
@@ -1917,7 +1921,6 @@ function MealEditor({
           <ChevronLeft /> Diary
         </button>
         <div>
-          <p className="eyebrow">A new page</p>
           <h1>{labelMode ? 'Add packaged food' : 'Add a meal'}</h1>
           <p
             className={`draft-status draft-status--${draftStatus}`}
@@ -1926,7 +1929,7 @@ function MealEditor({
             {draftStatus === 'saving'
               ? 'Saving draft…'
               : draftStatus === 'saved'
-                ? 'Draft saved on this device'
+                ? 'Draft saved'
                 : draftStatus === 'error'
                   ? 'Draft could not be saved; you can still save the meal.'
                   : 'Changes are saved locally as you work.'}

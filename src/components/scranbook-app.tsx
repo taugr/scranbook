@@ -1670,8 +1670,8 @@ function EmptyDiary({ onAdd }: { onAdd: () => void }) {
         <div className="privacy-note">
           <LockKeyhole />
           <span>
-            <strong>Private by design.</strong> Scranbook has no account and no
-            diary server.
+            <strong>Private by design.</strong> No sign-up required, and your
+            diary stays yours.
           </span>
         </div>
       </div>

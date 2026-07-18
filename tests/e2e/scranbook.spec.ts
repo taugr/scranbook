@@ -124,8 +124,12 @@ async function openSavedEntry(
   title: string,
 ) {
   const heading = page.getByRole('heading', { name: title, exact: true });
-  if (await heading.isVisible()) return;
-  await page.locator('.mobile-entry').filter({ hasText: title }).click();
+  const mobileEntry = page
+    .locator('.mobile-entry:visible')
+    .filter({ hasText: title });
+  await expect(heading.or(mobileEntry)).toBeVisible();
+  if (await mobileEntry.isVisible()) await mobileEntry.click();
+  await expect(heading).toBeVisible();
 }
 
 async function seriousAccessibilityViolations(
@@ -514,10 +518,18 @@ test('searches the diary and starts a fresh log from an entry', async ({
   await page.getByLabel('What was it?').fill('Tuesday lentil bowl');
   await page.getByLabel('Notes').fill('Extra lemon');
   await page.getByRole('button', { name: 'Save to this device' }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Tuesday lentil bowl' }),
+  ).toBeVisible();
 
-  const mobileDiary = page.locator('.entry-mobile-back:visible');
-  if ((await mobileDiary.count()) > 0) await mobileDiary.click();
-  await page.locator('input[aria-label="Search diary"]:visible').fill('lentil');
+  if ((page.viewportSize()?.width ?? 0) <= 780) {
+    const mobileDiary = page.locator('.entry-mobile-back');
+    await expect(mobileDiary).toBeVisible();
+    await mobileDiary.click();
+  }
+  const diarySearch = page.locator('input[aria-label="Search diary"]:visible');
+  await expect(diarySearch).toBeVisible();
+  await diarySearch.fill('lentil');
   await expect(page.locator('.diary-result-count:visible')).toHaveText(
     '1 of 1 entries',
   );

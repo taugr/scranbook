@@ -2221,6 +2221,23 @@ code {
   }
 }
 
+@media (max-width: 340px) {
+  .empty-illustration {
+    width: 90px;
+    height: 90px;
+  }
+  .empty-illustration svg {
+    width: 50px;
+    height: 50px;
+  }
+  .empty-diary h1 {
+    font-size: 2.45rem;
+  }
+  .empty-diary {
+    padding: 108px 18px 18px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

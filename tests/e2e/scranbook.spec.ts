@@ -164,6 +164,7 @@ test('empty mobile diary fits without page scrolling', async ({
     testInfo.project.name === 'desktop',
     'The desktop empty state uses its own two-column composition.',
   );
+  await page.setViewportSize({ width: 320, height: 568 });
   const overflow = await page.evaluate(() => {
     const scrollingElement =
       document.scrollingElement ?? document.documentElement;
@@ -174,6 +175,14 @@ test('empty mobile diary fits without page scrolling', async ({
   await expect(
     page.getByRole('button', { name: 'Add', exact: true }),
   ).toBeVisible();
+
+  const privacyNote = await page.locator('.privacy-note').boundingBox();
+  const mobileNavigation = await page.locator('.mobile-nav').boundingBox();
+  expect(privacyNote).not.toBeNull();
+  expect(mobileNavigation).not.toBeNull();
+  expect(privacyNote!.y + privacyNote!.height).toBeLessThanOrEqual(
+    mobileNavigation!.y,
+  );
 });
 
 test('creates and retains a manual diary entry', async ({ page }) => {

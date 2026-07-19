@@ -1816,6 +1816,11 @@ code {
 
 @media (max-width: 780px) {
   body {
+    min-height: 100dvh;
+    padding-bottom: 0;
+  }
+  .app-shell {
+    min-height: 100dvh;
     padding-bottom: 0;
   }
   .app-header {

@@ -9,6 +9,11 @@ export default defineConfig({
       name: 'mobile',
       use: { ...devices['iPhone 13'], browserName: 'chromium' },
     },
+    {
+      name: 'homepage-mobile-webkit',
+      grep: /empty mobile diary fits without page scrolling/,
+      use: { ...devices['iPhone 13'], browserName: 'webkit' },
+    },
     { name: 'narrow-mobile', use: { ...devices['Pixel 5'] } },
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
   ],

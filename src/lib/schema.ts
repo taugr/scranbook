@@ -306,6 +306,106 @@ export const backupStateSchema = z.object({
   reminderDismissedUntil: z.string().nullable(),
 });
 
+export const diaryRevisionStateSchema = z
+  .object({
+    version: z.literal(1),
+    generation: z.number().int().nonnegative(),
+    changedAt: z.string(),
+  })
+  .strict();
+
+export const installationStateSchema = z
+  .object({
+    version: z.literal(1),
+    deviceId: z.string().min(1),
+  })
+  .strict();
+
+export const driveSyncStateSchema = z
+  .object({
+    version: z.literal(1),
+    enabled: z.boolean(),
+    deviceId: z.string().min(1),
+    folderId: z.string().nullable(),
+    photoFolderId: z.string().nullable(),
+    manifestFileId: z.string().nullable(),
+    lastRemoteVersion: z.string().nullable(),
+    lastSyncedGeneration: z.number().int().nonnegative(),
+    lastSuccessfulSyncAt: z.string().nullable(),
+  })
+  .strict();
+
+export const driveManifestPhotoSchema = z
+  .object({
+    id: z.string().min(1),
+    driveFileId: z.string().min(1),
+    mimeType: z.string().min(1),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    byteSize: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(25 * 1024 * 1024),
+    createdAt: z.string(),
+  })
+  .strict();
+
+export const driveManifestSchema = z
+  .object({
+    format: z.literal('scranbook-drive'),
+    version: z.literal(1),
+    commitId: z.string().min(1),
+    updatedAt: z.string(),
+    writerDeviceId: z.string().min(1),
+    generation: z.number().int().nonnegative(),
+    entries: z.array(mealEntrySchema).max(100_000),
+    photos: z.array(driveManifestPhotoSchema).max(10_000),
+  })
+  .strict()
+  .superRefine((manifest, context) => {
+    const entryIds = new Set<string>();
+    const photoIds = new Set<string>();
+    const driveFileIds = new Set<string>();
+    for (const [index, entry] of manifest.entries.entries()) {
+      if (entryIds.has(entry.id)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['entries', index, 'id'],
+          message: 'Drive backup entry IDs must be unique.',
+        });
+      }
+      entryIds.add(entry.id);
+    }
+    for (const [index, photo] of manifest.photos.entries()) {
+      if (photoIds.has(photo.id)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['photos', index, 'id'],
+          message: 'Drive backup photo IDs must be unique.',
+        });
+      }
+      if (driveFileIds.has(photo.driveFileId)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['photos', index, 'driveFileId'],
+          message: 'Drive backup file IDs must be unique.',
+        });
+      }
+      photoIds.add(photo.id);
+      driveFileIds.add(photo.driveFileId);
+    }
+    for (const [index, entry] of manifest.entries.entries()) {
+      if (entry.photoId && !photoIds.has(entry.photoId)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['entries', index, 'photoId'],
+          message: 'Drive backup entry references a missing photo.',
+        });
+      }
+    }
+  });
+
 export type Confidence = z.infer<typeof confidenceSchema>;
 export type Classification = z.infer<typeof classificationSchema>;
 export type MealType = z.infer<typeof mealTypeSchema>;
@@ -330,6 +430,11 @@ export type ResponseMode = z.infer<typeof responseModeSchema>;
 export type ArchiveManifest = z.infer<typeof archiveManifestSchema>;
 export type MealDraft = z.infer<typeof mealDraftSchema>;
 export type BackupState = z.infer<typeof backupStateSchema>;
+export type DiaryRevisionState = z.infer<typeof diaryRevisionStateSchema>;
+export type InstallationState = z.infer<typeof installationStateSchema>;
+export type DriveSyncState = z.infer<typeof driveSyncStateSchema>;
+export type DriveManifestPhoto = z.infer<typeof driveManifestPhotoSchema>;
+export type DriveManifest = z.infer<typeof driveManifestSchema>;
 
 export interface StoredPhoto {
   id: string;

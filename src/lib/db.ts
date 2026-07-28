@@ -2,10 +2,16 @@ import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
 import {
   backupStateSchema,
   defaultModelSettings,
+  diaryRevisionStateSchema,
+  driveSyncStateSchema,
+  installationStateSchema,
   mealDraftSchema,
   mealEntrySchema,
   modelSettingsSchema,
   type BackupState,
+  type DiaryRevisionState,
+  type DriveSyncState,
+  type InstallationState,
   type MealDraft,
   type MealEntry,
   type ModelSettings,
@@ -14,6 +20,15 @@ import {
 
 const activeDraftKey = 'active-draft';
 const backupStateKey = 'backup-state';
+const diaryRevisionKey = 'diary-revision';
+const driveSyncStateKey = 'drive-sync-state';
+const installationStateKey = 'installation-state';
+
+const initialDiaryRevision: DiaryRevisionState = {
+  version: 1,
+  generation: 0,
+  changedAt: new Date(0).toISOString(),
+};
 
 interface ScranbookDb extends DBSchema {
   entries: {
@@ -68,9 +83,26 @@ export async function saveEntry(
 ): Promise<void> {
   const parsed = mealEntrySchema.parse(entry);
   const db = await database();
-  const transaction = db.transaction(['entries', 'photos'], 'readwrite');
+  const transaction = db.transaction(
+    ['entries', 'photos', 'meta'],
+    'readwrite',
+  );
   if (photo) await transaction.objectStore('photos').put(photo);
   await transaction.objectStore('entries').put(parsed);
+  const metaStore = transaction.objectStore('meta');
+  const currentRevision = diaryRevisionStateSchema.safeParse(
+    await metaStore.get(diaryRevisionKey),
+  );
+  await metaStore.put(
+    {
+      version: 1,
+      generation: currentRevision.success
+        ? currentRevision.data.generation + 1
+        : 1,
+      changedAt: new Date().toISOString(),
+    } satisfies DiaryRevisionState,
+    diaryRevisionKey,
+  );
   await transaction.done;
 }
 
@@ -95,6 +127,20 @@ export async function deleteEntry(
     await transaction.objectStore('photos').delete(entry.photoId);
   if (clearAssociatedDraft)
     await transaction.objectStore('meta').delete(activeDraftKey);
+  const metaStore = transaction.objectStore('meta');
+  const currentRevision = diaryRevisionStateSchema.safeParse(
+    await metaStore.get(diaryRevisionKey),
+  );
+  await metaStore.put(
+    {
+      version: 1,
+      generation: currentRevision.success
+        ? currentRevision.data.generation + 1
+        : 1,
+      changedAt: new Date().toISOString(),
+    } satisfies DiaryRevisionState,
+    diaryRevisionKey,
+  );
   await transaction.done;
 }
 
@@ -108,6 +154,20 @@ export async function clearDiary(): Promise<void> {
   await transaction.objectStore('photos').clear();
   await transaction.objectStore('meta').delete(activeDraftKey);
   await transaction.objectStore('meta').delete(backupStateKey);
+  const metaStore = transaction.objectStore('meta');
+  const currentRevision = diaryRevisionStateSchema.safeParse(
+    await metaStore.get(diaryRevisionKey),
+  );
+  await metaStore.put(
+    {
+      version: 1,
+      generation: currentRevision.success
+        ? currentRevision.data.generation + 1
+        : 1,
+      changedAt: new Date().toISOString(),
+    } satisfies DiaryRevisionState,
+    diaryRevisionKey,
+  );
   await transaction.done;
 }
 
@@ -131,8 +191,83 @@ export async function replaceDiary(
   for (const entry of entries)
     await entryStore.put(mealEntrySchema.parse(entry));
   for (const photo of photos) await photoStore.put(photo);
-  await transaction.objectStore('meta').delete(activeDraftKey);
+  const metaStore = transaction.objectStore('meta');
+  await metaStore.delete(activeDraftKey);
+  const currentRevision = diaryRevisionStateSchema.safeParse(
+    await metaStore.get(diaryRevisionKey),
+  );
+  await metaStore.put(
+    {
+      version: 1,
+      generation: currentRevision.success
+        ? currentRevision.data.generation + 1
+        : 1,
+      changedAt: new Date().toISOString(),
+    } satisfies DiaryRevisionState,
+    diaryRevisionKey,
+  );
   await transaction.done;
+}
+
+export async function loadDiaryRevision(): Promise<DiaryRevisionState> {
+  const stored = await (await database()).get('meta', diaryRevisionKey);
+  const parsed = diaryRevisionStateSchema.safeParse(stored);
+  if (parsed.success) return parsed.data;
+  if (stored !== undefined)
+    await (await database()).delete('meta', diaryRevisionKey);
+  return initialDiaryRevision;
+}
+
+export async function loadDriveSyncState(): Promise<DriveSyncState | null> {
+  const stored = await (await database()).get('meta', driveSyncStateKey);
+  const parsed = driveSyncStateSchema.safeParse(stored);
+  if (parsed.success) {
+    const installation = await loadOrCreateInstallationState(
+      parsed.data.deviceId,
+    );
+    if (parsed.data.deviceId === installation.deviceId) return parsed.data;
+    return saveDriveSyncState({
+      ...parsed.data,
+      deviceId: installation.deviceId,
+    });
+  }
+  if (stored !== undefined)
+    await (await database()).delete('meta', driveSyncStateKey);
+  return null;
+}
+
+export async function saveDriveSyncState(
+  state: DriveSyncState,
+): Promise<DriveSyncState> {
+  const parsed = driveSyncStateSchema.parse(state);
+  await (await database()).put('meta', parsed, driveSyncStateKey);
+  return parsed;
+}
+
+export async function clearDriveSyncState(): Promise<void> {
+  await (await database()).delete('meta', driveSyncStateKey);
+}
+
+export async function loadOrCreateInstallationState(
+  preferredDeviceId?: string,
+): Promise<InstallationState> {
+  const db = await database();
+  const transaction = db.transaction('meta', 'readwrite');
+  const store = transaction.objectStore('meta');
+  const stored = installationStateSchema.safeParse(
+    await store.get(installationStateKey),
+  );
+  if (stored.success) {
+    await transaction.done;
+    return stored.data;
+  }
+  const state = installationStateSchema.parse({
+    version: 1,
+    deviceId: preferredDeviceId ?? crypto.randomUUID(),
+  });
+  await store.put(state, installationStateKey);
+  await transaction.done;
+  return state;
 }
 
 export async function loadActiveDraft(): Promise<MealDraft | null> {

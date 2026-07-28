@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import axe from 'axe-core';
+import { FakeDrive } from '../support/fake-drive';
 
 const analysis = {
   classification: 'meal',
@@ -113,6 +114,11 @@ async function startFirstMeal(page: import('@playwright/test').Page) {
     await mobileAdd.click();
     return;
   }
+  const desktopAdd = page.getByRole('button', { name: 'Add a meal' });
+  if (await desktopAdd.isVisible()) {
+    await desktopAdd.click();
+    return;
+  }
   await page
     .getByRole('main')
     .getByRole('button', { name: 'Add your first meal' })
@@ -151,6 +157,123 @@ async function seriousAccessibilityViolations(
         violation.impact === 'critical' || violation.impact === 'serious',
     );
   });
+}
+
+async function installMockGoogleDrive(
+  page: import('@playwright/test').Page,
+  drive: FakeDrive,
+  options: {
+    authorization?: 'success' | 'denied' | 'missing_scope' | 'closed';
+  } = {},
+) {
+  await page.addInitScript(
+    ({ scope, authorization }) => {
+      const browserWindow = window as typeof window & {
+        google?: {
+          accounts: {
+            oauth2: {
+              initTokenClient: (options: {
+                callback: (response: unknown) => void;
+                error_callback?: () => void;
+              }) => { requestAccessToken: () => void };
+              hasGrantedAllScopes: () => boolean;
+            };
+          };
+        };
+      };
+      browserWindow.google = {
+        accounts: {
+          oauth2: {
+            initTokenClient: ({ callback, error_callback }) => ({
+              requestAccessToken: () => {
+                if (authorization === 'closed') {
+                  error_callback?.();
+                  return;
+                }
+                callback({
+                  ...(authorization === 'denied'
+                    ? { error: 'access_denied' }
+                    : {}),
+                  access_token: 'mock-drive-token',
+                  expires_in: 3_600,
+                  scope,
+                });
+              },
+            }),
+            hasGrantedAllScopes: () => authorization !== 'missing_scope',
+          },
+        },
+      };
+    },
+    {
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      authorization: options.authorization ?? 'success',
+    },
+  );
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const request = route.request();
+    const postData = request.postDataBuffer();
+    const response = await drive.handle({
+      url: request.url(),
+      method: request.method(),
+      headers: await request.allHeaders(),
+      body: postData ? new Uint8Array(postData) : undefined,
+    });
+    await route.fulfill({
+      status: response.status,
+      headers: response.headers,
+      body:
+        typeof response.body === 'string'
+          ? response.body
+          : response.body
+            ? Buffer.from(response.body)
+            : undefined,
+    });
+  });
+  await page.reload();
+}
+
+async function browserStorageText(page: import('@playwright/test').Page) {
+  return page.evaluate(async () => {
+    const indexedDbValues = await new Promise<unknown[]>((resolve, reject) => {
+      const request = indexedDB.open('scranbook');
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const stores = [...database.objectStoreNames];
+        if (stores.length === 0) {
+          database.close();
+          resolve([]);
+          return;
+        }
+        const transaction = database.transaction(stores, 'readonly');
+        const values: unknown[] = [];
+        for (const storeName of stores) {
+          const all = transaction.objectStore(storeName).getAll();
+          all.onsuccess = () => values.push(...all.result);
+        }
+        transaction.oncomplete = () => {
+          database.close();
+          resolve(values);
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+    return JSON.stringify({
+      localStorage: { ...localStorage },
+      sessionStorage: { ...sessionStorage },
+      indexedDbValues,
+      url: location.href,
+      body: document.body.innerText,
+    });
+  });
+}
+
+function driveBackupCardStatus(
+  page: import('@playwright/test').Page,
+  label: string,
+) {
+  return page.locator('.drive-backup-card').getByText(label, { exact: true });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -217,6 +340,405 @@ test('creates and retains a manual diary entry', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Estimated nutrition' }),
   ).toBeVisible();
+});
+
+test('backs up, reconnects, and restores through mocked Google Drive', async ({
+  page,
+}) => {
+  const drive = new FakeDrive();
+  await installMockGoogleDrive(page, drive);
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Drive test soup');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  const backedUpChip = page.getByRole('button', {
+    name: 'Google Drive backup: Backed up',
+  });
+  await expect(backedUpChip).toBeVisible();
+  await backedUpChip.click();
+  const backupPanel = page.getByRole('dialog', { name: 'Drive backup' });
+  await expect(backupPanel).toBeVisible();
+  await expect(
+    backupPanel.getByText('Your diary is still saved on this device.'),
+  ).toBeVisible();
+  await expect(
+    backupPanel.getByRole('button', { name: 'Manage backup' }),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(backupPanel).toBeHidden();
+  expect(await browserStorageText(page)).not.toContain('mock-drive-token');
+  expect(await seriousAccessibilityViolations(page)).toEqual([]);
+  expect(drive.manifestJson()).toMatchObject({
+    format: 'scranbook-drive',
+    entries: [{ title: 'Drive test soup' }],
+  });
+
+  await page.reload();
+  const reconnectChip = page.getByRole('button', {
+    name: 'Google Drive backup: Reconnect Drive',
+  });
+  await expect(reconnectChip).toBeVisible();
+  await reconnectChip.click();
+  const reconnectPanel = page.getByRole('dialog', { name: 'Drive backup' });
+  await expect(
+    reconnectPanel.getByText('Reconnect to continue backup', { exact: true }),
+  ).toBeVisible();
+  await reconnectPanel.getByRole('button', { name: 'Reconnect' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Google Drive backup: Backed up' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Connect Google Drive' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  await expect(
+    page.getByText('Drive backup found', { exact: true }),
+  ).toBeHidden();
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Delete entire diary' }).click();
+  await expect(page.getByText(/0 saved meals/)).toBeVisible();
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.getByRole('button', { name: 'Restore from Drive' }).click();
+  await expect(page.getByText(/0 saved meals/)).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Restore from Drive' }).click();
+  await expect(
+    page.getByText(/Drive backup restored on this device/),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Back to diary' }).click();
+  await openSavedEntry(page, 'Drive test soup');
+});
+
+test('offers clear choices when an existing Drive backup is found', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'desktop',
+    'One desktop run is sufficient for the first-connection decision flow.',
+  );
+  const drive = new FakeDrive();
+  await installMockGoogleDrive(page, drive);
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Existing Drive soup');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  const initialManifest = drive.manifestJson();
+  if (!initialManifest) throw new Error('Expected the initial Drive manifest');
+  const previousWriter = initialManifest.writerDeviceId;
+
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('scranbook');
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('meta', 'readwrite');
+        const store = transaction.objectStore('meta');
+        store.delete('drive-sync-state');
+        store.delete('installation-state');
+        transaction.oncomplete = () => {
+          database.close();
+          resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+
+  await expect(driveBackupCardStatus(page, 'Drive backup found')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Use Drive copy on this device' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: 'Replace Drive backup with this device',
+    }),
+  ).toBeVisible();
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page
+    .getByRole('button', { name: 'Use Drive copy on this device' })
+    .click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  const activatedManifest = drive.manifestJson();
+  expect(activatedManifest).toMatchObject({
+    entries: [{ title: 'Existing Drive soup' }],
+  });
+  expect(activatedManifest?.writerDeviceId).not.toBe(previousWriter);
+  expect(await seriousAccessibilityViolations(page)).toEqual([]);
+});
+
+test('cancels restore without discarding an active local draft', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'desktop',
+    'One desktop run is sufficient for the shared restore confirmation.',
+  );
+  const drive = new FakeDrive();
+  await installMockGoogleDrive(page, drive);
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Drive restore source');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Back to diary' }).click();
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Unfinished local draft');
+  await page.getByRole('button', { name: /Settings/ }).click();
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain('unfinished draft');
+    await dialog.dismiss();
+  });
+  await page.getByRole('button', { name: 'Restore from Drive' }).click();
+  await page.getByRole('button', { name: 'Back to meal editor' }).click();
+  await expect(page.getByLabel('What was it?')).toHaveValue(
+    'Unfinished local draft',
+  );
+});
+
+test('handles denied mocked Google authorization safely', async ({ page }) => {
+  const drive = new FakeDrive();
+  await installMockGoogleDrive(page, drive, { authorization: 'denied' });
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(page.getByText('Reconnect to continue backup')).toBeVisible();
+  await expect(page.getByText(/permission was not granted/)).toBeVisible();
+  expect(drive.filesWithRole('root')).toHaveLength(0);
+  expect(await seriousAccessibilityViolations(page)).toEqual([]);
+});
+
+test('keeps offline edits local, resumes online, and requests reconnect after revocation', async ({
+  page,
+  context,
+}) => {
+  const drive = new FakeDrive();
+  await installMockGoogleDrive(page, drive);
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Back to diary' }).click();
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Offline lentil soup');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await expect(
+    page.getByText('Changes pending while offline', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', {
+      name: 'Google Drive backup: Pending · Offline',
+    }),
+  ).toBeVisible();
+
+  await context.setOffline(false);
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  expect(drive.manifestJson()).toMatchObject({
+    entries: [{ title: 'Offline lentil soup' }],
+  });
+
+  drive.failNext(403, 'insufficientPermissions');
+  await page.getByRole('button', { name: 'Back up now' }).click();
+  await expect(page.getByText('Reconnect to continue backup')).toBeVisible();
+  expect(await seriousAccessibilityViolations(page)).toEqual([]);
+});
+
+test('coalesces edits made while a mocked Drive backup is in flight', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'desktop',
+    'One desktop run is sufficient for deterministic single-flight behavior.',
+  );
+  const drive = new FakeDrive();
+  await installMockGoogleDrive(page, drive);
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  await page.getByRole('button', { name: 'Back to diary' }).click();
+
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('First queued title');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+
+  const releaseManifest = drive.delayNextMatching((request) =>
+    request.url.includes('uploadType=multipart'),
+  );
+  await page.getByRole('button', { name: 'Back up now' }).click();
+  await expect(page.getByText('Backing up to Drive…')).toBeVisible();
+  await page.getByRole('button', { name: 'Back to diary' }).click();
+  await openSavedEntry(page, 'First queued title');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByLabel('What was it?').fill('Latest queued title');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+
+  expect(
+    drive.requests.filter((request) =>
+      request.url.includes('uploadType=multipart'),
+    ),
+  ).toHaveLength(2);
+  releaseManifest();
+  await expect(
+    page.getByText('Changes pending', { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  expect(drive.manifestJson()).toMatchObject({
+    entries: [{ title: 'Latest queued title' }],
+  });
+});
+
+test('debounces rapid local edits into one mocked Drive commit', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'desktop',
+    'One desktop run is sufficient for the shared timer policy.',
+  );
+  const drive = new FakeDrive();
+  await installMockGoogleDrive(page, drive);
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Before rapid edits');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  await page.clock.install();
+
+  await page.getByRole('button', { name: 'Back to diary' }).click();
+  await openSavedEntry(page, 'Before rapid edits');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByLabel('What was it?').fill('First rapid edit');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByLabel('What was it?').fill('Second rapid edit');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await expect(
+    page.getByText('Changes pending', { exact: true }),
+  ).toBeVisible();
+
+  const manifestCommitCount = () =>
+    drive.requests.filter((request) =>
+      request.url.includes('uploadType=multipart'),
+    ).length;
+  expect(manifestCommitCount()).toBe(1);
+  await page.clock.runFor(29_999);
+  expect(manifestCommitCount()).toBe(1);
+  await page.clock.runFor(1);
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  expect(manifestCommitCount()).toBe(2);
+  expect(drive.manifestJson()).toMatchObject({
+    entries: [{ title: 'Second rapid edit' }],
+  });
+});
+
+test('backs off a mocked transient Drive failure before retrying', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'desktop',
+    'One desktop run is sufficient for the shared retry timer.',
+  );
+  const drive = new FakeDrive();
+  await installMockGoogleDrive(page, drive);
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Before retry');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  await page.clock.install();
+
+  await page.getByRole('button', { name: 'Back to diary' }).click();
+  await openSavedEntry(page, 'Before retry');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByLabel('What was it?').fill('After retry');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  drive.failNext(503);
+  await page.getByRole('button', { name: 'Back up now' }).click();
+  await expect(
+    page.getByText('Changes pending', { exact: true }),
+  ).toBeVisible();
+
+  const manifestCommitCount = () =>
+    drive.requests.filter((request) =>
+      request.url.includes('uploadType=multipart'),
+    ).length;
+  expect(manifestCommitCount()).toBe(1);
+  await page.clock.runFor(59_999);
+  expect(manifestCommitCount()).toBe(1);
+  await page.clock.runFor(1);
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+  expect(manifestCommitCount()).toBe(2);
+  expect(drive.manifestJson()).toMatchObject({
+    entries: [{ title: 'After retry' }],
+  });
+});
+
+test('surfaces a mocked remote conflict without overwriting Drive', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'desktop',
+    'One desktop run is sufficient for the shared conflict state.',
+  );
+  const drive = new FakeDrive();
+  await installMockGoogleDrive(page, drive);
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Remote original');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Connect Google Drive' }).click();
+  await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
+
+  drive.replaceManifest({
+    ...drive.manifestJson(),
+    commitId: 'another-commit',
+    writerDeviceId: 'another-device',
+  });
+  await page.getByRole('button', { name: 'Back to diary' }).click();
+  await openSavedEntry(page, 'Remote original');
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByLabel('What was it?').fill('Local conflicting edit');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: /Settings/ }).click();
+  await page.getByRole('button', { name: 'Back up now' }).click();
+
+  await expect(
+    driveBackupCardStatus(page, 'Drive backup changed elsewhere'),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Review Drive backup', exact: true }),
+  ).toBeVisible();
+  expect(drive.manifestJson()).toMatchObject({
+    writerDeviceId: 'another-device',
+    entries: [{ title: 'Remote original' }],
+  });
+  expect(await seriousAccessibilityViolations(page)).toEqual([]);
 });
 
 test('analyses a selected image through a mocked compatible endpoint', async ({

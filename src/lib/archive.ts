@@ -14,6 +14,13 @@ export interface DiaryImportResult {
   latestEntryUpdatedAt: string | null;
 }
 
+export type ArchiveDelivery = 'shared' | 'downloaded' | 'cancelled';
+
+interface FileShareTarget {
+  canShare?: (data?: ShareData) => boolean;
+  share?: (data?: ShareData) => Promise<void>;
+}
+
 function safeFileName(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
@@ -100,4 +107,36 @@ export function downloadBlob(blob: Blob, fileName: string) {
   anchor.download = fileName;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export async function shareOrDownloadArchive(
+  blob: Blob,
+  fileName: string,
+  target: FileShareTarget | undefined = typeof navigator === 'undefined'
+    ? undefined
+    : navigator,
+  download: (blob: Blob, fileName: string) => void = downloadBlob,
+): Promise<ArchiveDelivery> {
+  const file = new File([blob], fileName, { type: 'application/zip' });
+  let sharingSupported = false;
+  try {
+    sharingSupported = Boolean(target?.canShare?.({ files: [file] }));
+  } catch {
+    // A browser-specific capability failure uses the portable download path.
+  }
+  if (target?.share && sharingSupported) {
+    try {
+      await target.share({
+        files: [file],
+        title: 'Scranbook diary backup',
+      });
+      return 'shared';
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return 'cancelled';
+      }
+    }
+  }
+  download(blob, fileName);
+  return 'downloaded';
 }

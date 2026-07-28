@@ -15,8 +15,10 @@
 ## Overview
 
 Scranbook is a mobile-first Next.js PWA exported as static files and deployed with Cloudflare
-Workers Static Assets. Meal entries and processed photos live in IndexedDB on the user's device.
-There are no accounts, analytics, Worker code, or server-side diary APIs.
+Workers Static Assets. Meal entries and processed photos use IndexedDB as the working copy on the
+user's device. There are no Scranbook accounts, analytics, Worker code, or server-side diary APIs.
+Users can optionally copy accepted entries and processed photos directly from the browser to a
+visible folder in their own Google Drive.
 
 When the user explicitly chooses to analyse a photo, the browser sends it directly to their
 configured OpenAI-compatible endpoint. LM Studio with `google/gemma-4-e4b` is the default local
@@ -38,6 +40,10 @@ development profile, but the provider is configurable.
 - Local IndexedDB persistence with export, import, deletion, storage visibility, and
   gentle archive reminders. Version 2 archives preserve reviewed label provenance
   and remain able to import version 1 backups.
+- Provider-neutral backup sharing through the operating-system share sheet where supported, with
+  direct archive download as the fallback.
+- Optional browser-direct Google Drive backup while the app is open, including pending/offline
+  state, explicit reconnection, conflict protection, and validated restore on another device.
 - Guided LM Studio and custom OpenAI-compatible setup with endpoint privacy cues,
   discovered-model selection, and advanced connection controls.
 - Mobile diary/add/settings navigation and a two-column desktop journal.
@@ -49,6 +55,7 @@ development profile, but the provider is configurable.
 - Node.js 22.13+
 - pnpm 11.9+
 - Optional: an OpenAI-compatible vision endpoint such as LM Studio
+- Optional: a Google OAuth web client ID with the non-sensitive `drive.file` scope
 
 ## Setup
 
@@ -59,6 +66,13 @@ pnpm dev
 
 Open `http://localhost:3000`. Model configuration is stored through the Settings screen, not an
 environment file.
+
+Google Drive backup is disabled when no client ID is present. To enable the connection surface in
+a build, set `NEXT_PUBLIC_GOOGLE_DRIVE_CLIENT_ID` to a Web OAuth client ID whose authorized origin
+matches the app. This is a public identifier; never add a Google client secret to the frontend.
+For local live testing, put the ID in the ignored `.env.local` file and run `pnpm preview:drive`.
+Use a dedicated browser profile and test Google account so live Drive data remains separate from
+normal browsing.
 
 For the verified LM Studio profile, start the loopback-only server with browser access enabled:
 
@@ -83,17 +97,25 @@ way to use a plain-HTTP local endpoint.
 ```sh
 pnpm dev
 pnpm build
+pnpm build:drive:mock
 pnpm start
+pnpm preview:drive
 pnpm test
 pnpm typecheck
 pnpm lint
 pnpm format
 pnpm test:e2e
+pnpm test:e2e:mock
 pnpm test:live -- --image /path/to/meal.jpg
 pnpm nutrition:data
 pnpm cloudflare:preview
 pnpm cloudflare:deploy
 ```
+
+`test:e2e` and `test:e2e:mock` build with a dummy OAuth client ID and intercept Google Identity
+Services and Drive requests with local mocks. They do not access a real Google account or Drive. If
+`.env.local` exists, the command restores the normal local build after the mocked suite finishes.
+`build:drive:mock` is available for explicitly producing the same credential-free test build.
 
 `test:live` is opt-in and never runs in CI. Pass a local image with `--image` or set
 `SCRANBOOK_TEST_IMAGE`; the command resizes it before inference and prints validated output plus
@@ -106,11 +128,12 @@ nutrition API at runtime. See [docs/nutrition-data.md](./docs/nutrition-data.md)
 
 ## Privacy
 
-Scranbook has no diary backend. Cloudflare serves the application files, while entries, photos,
-settings, and saved credentials stay in browser storage. A photo leaves the device only when the
-user chooses to analyse a meal photo or scan a label, and then travels directly
-to the configured endpoint. Label arithmetic and manual label entry stay in the
-browser.
+Scranbook has no diary backend. Cloudflare serves the application files, while IndexedDB remains
+the working copy for entries and photos. Model settings and credentials stay in browser storage.
+A photo leaves the device when the user chooses to analyse a meal photo or scan a label, and then
+travels directly to the configured endpoint. If the user explicitly enables Google Drive backup,
+accepted entries and processed photos are also copied directly from the browser to their Drive;
+model credentials, custom headers, tokens, settings, and unfinished drafts are excluded.
 
 See the in-app `/privacy` page and [SECURITY.md](./SECURITY.md).
 

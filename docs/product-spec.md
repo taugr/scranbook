@@ -1,13 +1,18 @@
 # Scranbook Product and Architecture Specification
 
 Status: MVP implemented and deployed; maintained as the product decision record
-Last updated: 2026-07-18
+Last updated: 2026-07-21
 
 Near-term product work is defined in
 [next-features-plan.md](./next-features-plan.md).
 
 A dedicated packaged-food workflow is implemented from
 [nutrition-label-scanner-plan.md](./nutrition-label-scanner-plan.md).
+
+The optional browser-direct Google Drive backup and restore implementation
+follows [google-drive-sync-plan.md](./google-drive-sync-plan.md). It remains a
+local, unreleased change until Google OAuth configuration and deployment are
+separately approved.
 
 ## 1. Product goal
 
@@ -22,7 +27,10 @@ model is configured or the model is unavailable.
 ## 2. MVP principles
 
 - No accounts, cookies, analytics, telemetry, or server-side diary storage.
-- Diary entries, photos, settings, and model credentials stay on the device.
+- IndexedDB remains the working source of truth for diary entries and photos.
+  Settings and model credentials stay on the device. Accepted entries and
+  processed photos leave it for backup only after the user explicitly connects
+  Google Drive.
 - A photo is sent to a model only after the user explicitly chooses to analyse
   it.
 - A remote model endpoint necessarily receives the analysed image. The app must
@@ -38,6 +46,8 @@ model is configured or the model is unavailable.
   amount consumed, and the same workflow can be completed manually offline.
 - The installed app can browse, add, edit, export, and delete diary entries
   offline. AI analysis requires a reachable model endpoint.
+- Optional Drive backup never blocks a local save and runs only while the app is
+  open, online, and has a current in-memory access token.
 
 ## 3. Technical direction
 
@@ -130,6 +140,10 @@ After the first saved entry, request persistent browser storage where supported.
 Show estimated storage usage in settings. Provide a versioned export/import
 archive containing entries and photos but excluding model credentials by
 default. Provide separate actions to clear the diary and clear credentials.
+Offer the archive through native file sharing where supported, with download as
+the fallback. Track accepted-diary generations atomically in the `meta` store so
+optional remote backup can retain pending changes across reloads without making
+Drive the working database.
 
 ## 5. AI provider contract
 
@@ -230,7 +244,8 @@ uncertainty handling rather than ordinary meal-photo recognition.
 
 - **Diary**: entries grouped by date, with the most recent first.
 - **Add**: central camera action.
-- **Settings**: model, storage, privacy, export, import, and deletion.
+- **Settings**: model, storage, privacy, archive sharing/export/import, optional
+  Google Drive backup and restore, and deletion.
 
 ### Add-meal flow
 
@@ -293,6 +308,10 @@ Create a friendly, comforting, humanist culinary style:
 - Never render model-produced HTML.
 - Do not include credentials in exports, URLs, analytics, error messages, or
   source-controlled fixtures.
+- Hold Google access tokens in memory only and request only `drive.file`; never
+  persist a token or include it in logs, archives, notices, or error messages.
+- Validate complete remote manifests and photos before replacing IndexedDB, and
+  stop rather than overwrite when a different remote writer or version appears.
 - Explain that locally stored API keys remain accessible to code running under
   the Scranbook origin; offer session-only credentials as an option.
 - Include a concise privacy page and data-deletion instructions.
@@ -308,6 +327,10 @@ Create a friendly, comforting, humanist culinary style:
 - Structured, partial, malformed, fenced, and plain-text response parsing.
 - Provider error classification and cancellation.
 - Export/import round trips and incompatible archive rejection.
+- Atomic diary revision tracking, mocked Drive discovery/upload/restore,
+  authorization and HTTP failure classification, and remote-writer conflicts.
+- A durable browser installation identity survives Drive disconnect/reconnect;
+  finding an existing backup offers explicit use-remote or replace-remote paths.
 - Diary sorting, editing, deletion, and re-analysis draft behaviour.
 
 ### Browser suite
@@ -318,6 +341,9 @@ Create a friendly, comforting, humanist culinary style:
   local photos that are not committed to the repository.
 - Mocked model success, uncertainty, timeout, CORS-like failure, and malformed
   output.
+- Mocked Google Identity Services and Drive API connection, reconnection,
+  backup, global status/detail feedback, decision-only conflict notices, and
+  restore. Automated tests must not use a real Drive.
 - Reload persistence, offline diary use, service-worker registration, manifest,
   installability metadata, and storage clearing.
 - Accessibility checks for keyboard navigation, labels, contrast-sensitive
@@ -439,6 +465,10 @@ live production AI is not a release gate.
 - Scranbook deploys no Worker script that could receive diary or photo data.
 - The UI clearly identifies when a model endpoint will receive a photo.
 - Export/import round-trips entries and photos without exporting credentials.
+- Native sharing falls back to a portable archive download, and optional Drive
+  backup never delays a successful local save.
+- A clean browser can validate and restore a Drive backup; another remote writer
+  cannot be silently overwritten.
 - Users can delete individual entries, all diary data, and credentials.
 - The app is usable at phone and desktop sizes and is installable as a PWA.
 - Unit, browser, build, and Cloudflare preview gates pass.
@@ -510,7 +540,8 @@ live production AI is not a release gate.
 ## 17. Deferred work not included in the current plan
 
 - Ingredient-database micronutrient expansion, allergens, or medical guidance.
-- Accounts, cross-device sync, sharing, social features, or server backups.
+- Accounts, simultaneous multi-device editing, social features, shared diaries,
+  or Scranbook-hosted server backups.
 - On-device WebGPU inference bundled into the PWA.
 - Barcode databases, external nutrition-provider integrations, or restaurant
   menus.

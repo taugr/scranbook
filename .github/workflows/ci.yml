@@ -46,6 +46,8 @@ jobs:
 
       - name: Build production app
         run: pnpm build
+        env:
+          NEXT_PUBLIC_GOOGLE_DRIVE_CLIENT_ID: scranbook-e2e-client-id
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium webkit

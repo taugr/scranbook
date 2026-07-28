@@ -1,6 +1,10 @@
 import JSZip from 'jszip';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createDiaryArchive, importDiaryArchive } from '@/lib/archive';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  createDiaryArchive,
+  importDiaryArchive,
+  shareOrDownloadArchive,
+} from '@/lib/archive';
 import {
   getPhoto,
   listEntries,
@@ -175,5 +179,93 @@ describe('diary archives', () => {
     await expect(
       importDiaryArchive(await zip.generateAsync({ type: 'blob' })),
     ).rejects.toThrow('unsafe photo path');
+  });
+});
+
+describe('archive delivery', () => {
+  const archive = new Blob(['backup'], { type: 'application/zip' });
+
+  it('uses native file sharing when supported', async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    const download = vi.fn();
+    await expect(
+      shareOrDownloadArchive(
+        archive,
+        'diary.scranbook.zip',
+        { canShare: () => true, share },
+        download,
+      ),
+    ).resolves.toBe('shared');
+    expect(share).toHaveBeenCalledWith(
+      expect.objectContaining({
+        files: [expect.any(File)],
+        title: 'Scranbook diary backup',
+      }),
+    );
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('falls back to download when sharing is unsupported or fails', async () => {
+    const unsupportedDownload = vi.fn();
+    await expect(
+      shareOrDownloadArchive(
+        archive,
+        'diary.scranbook.zip',
+        { canShare: () => false, share: vi.fn() },
+        unsupportedDownload,
+      ),
+    ).resolves.toBe('downloaded');
+    expect(unsupportedDownload).toHaveBeenCalledWith(
+      archive,
+      'diary.scranbook.zip',
+    );
+
+    const failedDownload = vi.fn();
+    await expect(
+      shareOrDownloadArchive(
+        archive,
+        'diary.scranbook.zip',
+        {
+          canShare: () => true,
+          share: vi.fn().mockRejectedValue(new Error('share failed')),
+        },
+        failedDownload,
+      ),
+    ).resolves.toBe('downloaded');
+    expect(failedDownload).toHaveBeenCalledOnce();
+
+    const capabilityFailureDownload = vi.fn();
+    await expect(
+      shareOrDownloadArchive(
+        archive,
+        'diary.scranbook.zip',
+        {
+          canShare: () => {
+            throw new Error('capability check failed');
+          },
+          share: vi.fn(),
+        },
+        capabilityFailureDownload,
+      ),
+    ).resolves.toBe('downloaded');
+    expect(capabilityFailureDownload).toHaveBeenCalledOnce();
+  });
+
+  it('does not download when the user cancels the share sheet', async () => {
+    const download = vi.fn();
+    await expect(
+      shareOrDownloadArchive(
+        archive,
+        'diary.scranbook.zip',
+        {
+          canShare: () => true,
+          share: vi
+            .fn()
+            .mockRejectedValue(new DOMException('cancelled', 'AbortError')),
+        },
+        download,
+      ),
+    ).resolves.toBe('cancelled');
+    expect(download).not.toHaveBeenCalled();
   });
 });

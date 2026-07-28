@@ -10,8 +10,10 @@ export default function PrivacyPage() {
       <h1>Your diary belongs on your device.</h1>
       <p>
         Scranbook has no accounts, analytics, advertising, or server-side diary
-        database. Meal entries, processed photos, preferences, and any saved
-        model credentials are kept in your browser storage on this device.
+        database. By default, meal entries, processed photos, preferences, and
+        any saved model credentials are kept in your browser storage on this
+        device. IndexedDB remains the working copy even if you optionally enable
+        Google Drive backup.
       </p>
       <h2>When a photo leaves the device</h2>
       <p>
@@ -29,11 +31,34 @@ export default function PrivacyPage() {
         infrastructure may process ordinary request metadata such as IP address,
         requested URL, and browser headers when serving the app.
       </p>
+      <h2>Optional Google Drive backup</h2>
+      <p>
+        If you choose <strong>Connect Google Drive</strong>, Scranbook asks only
+        for permission to manage files it creates or that you explicitly share
+        with it. The browser copies accepted diary entries and processed photos
+        directly to a visible Scranbook folder in your Google Drive. Cloudflare
+        does not receive those backup requests.
+      </p>
+      <p>
+        Model credentials, custom request headers, Google access tokens,
+        preferences, and unfinished drafts are not included. The Google access
+        token is held in memory for the current page only, so you may need to
+        reconnect after reopening Scranbook. Automatic backup runs only while
+        the app is open, online, and authorized.
+      </p>
+      <p>
+        Disconnecting stops future backups but does not delete either your local
+        diary or existing files in Drive. You can also revoke permission from
+        your Google Account. Restoring from Drive validates the complete backup
+        and asks before replacing the diary stored in this browser.
+      </p>
       <h2>Control and deletion</h2>
       <p>
-        Settings lets you export a versioned archive, delete the complete diary,
-        and separately clear model credentials. Removing site data in your
-        browser also removes Scranbook data from that browser profile.
+        Settings lets you share or download a versioned archive, delete the
+        complete local diary, disconnect Google Drive, and separately clear
+        model credentials. Removing site data in your browser also removes
+        Scranbook data from that browser profile, but does not remove a backup
+        already stored in Drive.
       </p>
       <h2>Local nutrition estimates</h2>
       <p>

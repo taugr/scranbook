@@ -21,6 +21,7 @@ import {
   Save,
   Search,
   Settings,
+  Share2,
   Sparkles,
   Trash2,
   Upload,
@@ -32,6 +33,11 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand-mark';
 import { DiaryControls } from '@/components/diary-controls';
+import { GoogleDriveBackupCard } from '@/components/google-drive-backup-card';
+import {
+  GoogleDriveBackupStatus,
+  GoogleDriveConflictBanner,
+} from '@/components/google-drive-backup-status';
 import { LabelNutritionSummary } from '@/components/label-nutrition-summary';
 import { NutritionLabelCapture } from '@/components/nutrition-label-capture';
 import { NutritionLabelReview } from '@/components/nutrition-label-review';
@@ -40,6 +46,7 @@ import {
   createDiaryArchive,
   downloadBlob,
   importDiaryArchive,
+  shareOrDownloadArchive,
 } from '@/lib/archive';
 import {
   backupStateForExport,
@@ -56,6 +63,7 @@ import {
   listEntries,
   loadActiveDraft,
   loadBackupState,
+  loadDiaryRevision,
   loadModelSettings,
   requestPersistentStorage,
   saveActiveDraft,
@@ -95,6 +103,7 @@ import {
   defaultModelSettings,
   modelSettingsSchema,
   type BackupState,
+  type DiaryRevisionState,
   type Ingredient,
   type MealDraft,
   type MealEntry,
@@ -103,6 +112,7 @@ import {
   type NutritionValues,
   type StoredPhoto,
 } from '@/lib/schema';
+import { useGoogleDriveBackup } from '@/lib/use-google-drive-backup';
 
 type Screen = 'diary' | 'add' | 'settings';
 type ContentScreen = Exclude<Screen, 'settings'>;
@@ -232,6 +242,11 @@ export function ScranbookApp() {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [storage, setStorage] = useState<StorageEstimate | null>(null);
   const [backupState, setBackupState] = useState<BackupState | null>(null);
+  const [diaryRevision, setDiaryRevision] = useState<DiaryRevisionState>({
+    version: 1,
+    generation: 0,
+    changedAt: new Date(0).toISOString(),
+  });
   const [matchPickerIndex, setMatchPickerIndex] = useState<number | null>(null);
   const [online, setOnline] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
@@ -242,18 +257,22 @@ export function ScranbookApp() {
   const pendingUrl = usePhotoUrl(pendingPhoto?.id ?? null, pendingPhoto);
 
   const refresh = useCallback(async () => {
-    const [nextEntries, nextStorage] = await Promise.all([
+    const [nextEntries, nextStorage, nextRevision] = await Promise.all([
       listEntries(),
       storageEstimate(),
+      loadDiaryRevision(),
     ]);
     setEntries(nextEntries);
     setStorage(nextStorage);
+    setDiaryRevision(nextRevision);
     setSelectedId((current) =>
       current && nextEntries.some((entry) => entry.id === current)
         ? current
         : (nextEntries[0]?.id ?? null),
     );
   }, []);
+
+  const driveBackup = useGoogleDriveBackup(diaryRevision, refresh);
 
   useEffect(() => {
     async function initialize() {
@@ -1088,6 +1107,34 @@ export function ScranbookApp() {
     }
   }
 
+  async function shareDiaryBackup() {
+    resetMessages();
+    setBusy('Packing your diary…');
+    try {
+      const blob = await createDiaryArchive();
+      const delivery = await shareOrDownloadArchive(
+        blob,
+        `scranbook-${new Date().toISOString().slice(0, 10)}.scranbook.zip`,
+      );
+      if (delivery === 'cancelled') {
+        setNotice('Backup sharing cancelled. Your local diary was unchanged.');
+        return;
+      }
+      const state = backupStateForExport(entries);
+      await saveBackupState(state);
+      setBackupState(state);
+      setNotice(
+        delivery === 'shared'
+          ? 'Diary backup shared. Model credentials were not included.'
+          : 'Diary backup downloaded. Model credentials were not included.',
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function importDiary(file?: File) {
     if (!file) return;
     resetMessages();
@@ -1202,20 +1249,33 @@ export function ScranbookApp() {
             <small>your kitchen notebook</small>
           </span>
         </button>
-        {!online && (
-          <span className="offline-pill">
-            <WifiOff /> Offline
-          </span>
-        )}
-        {entries.length > 0 && (
-          <button
-            className="desktop-add button button--primary"
-            onClick={startAdd}
-          >
-            <Camera /> Add a meal
-          </button>
-        )}
+        <div className="app-header-actions">
+          {!online && (
+            <span
+              className={`offline-pill${driveBackup.state?.enabled ? ' offline-pill--compact' : ''}`}
+            >
+              <WifiOff /> <span>Offline</span>
+            </span>
+          )}
+          <GoogleDriveBackupStatus
+            controller={driveBackup}
+            onOpenSettings={openSettings}
+          />
+          {entries.length > 0 && (
+            <button
+              className="desktop-add button button--primary"
+              onClick={startAdd}
+            >
+              <Camera /> Add a meal
+            </button>
+          )}
+        </div>
       </header>
+
+      <GoogleDriveConflictBanner
+        controller={driveBackup}
+        onReview={openSettings}
+      />
 
       {(error || notice) && (
         <div
@@ -1416,6 +1476,8 @@ export function ScranbookApp() {
               availableModels={availableModels}
               backupState={backupState}
               backupDue={backupDue}
+              driveBackup={driveBackup}
+              hasActiveDraft={Boolean(recoverableDraft)}
               returnScreen={settingsReturnScreen}
               onClose={() => setScreen(settingsReturnScreen)}
               onSettingsChange={updateModelSettings}
@@ -1425,6 +1487,7 @@ export function ScranbookApp() {
               onLmStudioPreset={applyLmStudioPreset}
               onAvailableModelChange={selectAvailableModel}
               onExport={() => void exportDiary()}
+              onShareBackup={() => void shareDiaryBackup()}
               onImport={(file) => void importDiary(file)}
               importRef={importRef}
               onClearDiary={() => void removeAllDiaryData()}
@@ -2489,6 +2552,8 @@ function SettingsPanel({
   availableModels,
   backupState,
   backupDue,
+  driveBackup,
+  hasActiveDraft,
   returnScreen,
   onClose,
   onSettingsChange,
@@ -2498,6 +2563,7 @@ function SettingsPanel({
   onLmStudioPreset,
   onAvailableModelChange,
   onExport,
+  onShareBackup,
   onImport,
   importRef,
   onClearDiary,
@@ -2512,6 +2578,8 @@ function SettingsPanel({
   availableModels: string[];
   backupState: BackupState | null;
   backupDue: boolean;
+  driveBackup: ReturnType<typeof useGoogleDriveBackup>;
+  hasActiveDraft: boolean;
   returnScreen: ContentScreen;
   onClose: () => void;
   onSettingsChange: (settings: ModelSettings) => void;
@@ -2521,6 +2589,7 @@ function SettingsPanel({
   onLmStudioPreset: () => void;
   onAvailableModelChange: (model: string) => void;
   onExport: () => void;
+  onShareBackup: () => void;
   onImport: (file?: File) => void;
   importRef: React.RefObject<HTMLInputElement | null>;
   onClearDiary: () => void;
@@ -2824,6 +2893,12 @@ function SettingsPanel({
               </div>
             )}
             <div className="stack-actions">
+              <button
+                className="button button--primary"
+                onClick={onShareBackup}
+              >
+                <Share2 /> Share backup
+              </button>
               <button className="button button--quiet" onClick={onExport}>
                 <Download /> Export diary
               </button>
@@ -2852,12 +2927,17 @@ function SettingsPanel({
               <BackupReminder onExport={onExport} onDismiss={onDismissBackup} />
             )}
           </div>
+          <GoogleDriveBackupCard
+            controller={driveBackup}
+            localEntryCount={entryCount}
+            hasActiveDraft={hasActiveDraft}
+          />
           <div className="settings-card">
             <h2>Privacy controls</h2>
             <p>
               Scranbook has no account or diary API. Cloudflare serves the app;
               meal data stays in this browser unless you send a photo to your
-              configured model.
+              configured model or explicitly enable Google Drive backup.
             </p>
             <Link className="text-link" href="/privacy">
               Read the plain-language privacy note →

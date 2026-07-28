@@ -121,6 +121,13 @@ svg {
   font-size: 0.72rem;
   letter-spacing: 0.03em;
 }
+.app-header-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
 .brand-mark {
   width: 47px;
   height: 47px;
@@ -150,6 +157,139 @@ svg {
   background: var(--aubergine);
   color: white;
   padding: 7px 11px;
+}
+
+.drive-status-control {
+  position: relative;
+}
+.drive-status-chip {
+  min-height: 42px;
+  max-width: 230px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 13px;
+  background: rgba(255, 250, 240, 0.7);
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(79, 55, 38, 0.06);
+}
+.drive-status-chip > svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+.drive-status-chip--success {
+  border-color: color-mix(in srgb, var(--sage) 38%, transparent);
+  background: color-mix(in srgb, var(--sage-light) 72%, transparent);
+  color: #405738;
+}
+.drive-status-chip--working {
+  border-color: color-mix(in srgb, var(--butter) 48%, transparent);
+  background: color-mix(in srgb, var(--butter) 13%, var(--paper-light));
+}
+.drive-status-chip--warning,
+.drive-status-chip--attention {
+  border-color: color-mix(in srgb, var(--butter) 68%, var(--line));
+  background: color-mix(in srgb, var(--butter) 21%, var(--paper-light));
+  color: #77520b;
+}
+.drive-status-chip--attention {
+  border-color: color-mix(in srgb, var(--tomato) 48%, var(--line));
+  color: var(--tomato-dark);
+}
+.drive-status-popover {
+  width: min(320px, calc(100vw - 24px));
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  padding: 21px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--paper-light) 94%, var(--paper));
+  box-shadow: 0 20px 55px rgba(49, 34, 28, 0.2);
+  color: var(--ink);
+  text-align: left;
+}
+.drive-status-popover .eyebrow {
+  margin-bottom: 5px;
+}
+.drive-status-popover h2 {
+  margin: 0 0 14px;
+  font-size: 1.45rem;
+}
+.drive-status-popover > strong {
+  display: block;
+  color: var(--tomato-dark);
+  margin-bottom: 6px;
+}
+.drive-status-popover > p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+.drive-status-popover .drive-status-local-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+.drive-status-local-note svg {
+  width: 18px;
+  color: var(--sage);
+  flex: 0 0 auto;
+}
+.drive-status-popover .button {
+  width: 100%;
+  margin-top: 0;
+}
+.drive-conflict-banner {
+  width: 100%;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 34px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--butter) 65%, var(--line));
+  background: color-mix(in srgb, var(--butter) 20%, var(--paper-light));
+  color: #67460b;
+  text-align: left;
+  cursor: pointer;
+  position: sticky;
+  top: 86px;
+  z-index: 25;
+}
+.drive-conflict-banner > svg {
+  width: 21px;
+  height: 21px;
+}
+.drive-conflict-banner strong,
+.drive-conflict-banner small {
+  display: block;
+}
+.drive-conflict-banner small {
+  margin-top: 2px;
+  color: var(--muted);
+}
+.drive-conflict-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--tomato-dark);
+  font-weight: 900;
+}
+.drive-conflict-action svg {
+  width: 17px;
 }
 
 .button {
@@ -1298,6 +1438,71 @@ textarea {
   font-size: 0.78rem;
   margin: 14px 0 0;
 }
+.drive-backup-card {
+  border-top: 4px solid #4285f4;
+}
+.drive-backup-status {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  padding: 13px;
+  border-radius: 14px;
+  background: rgba(66, 133, 244, 0.1);
+}
+.drive-backup-status > svg {
+  width: 20px;
+  flex: 0 0 auto;
+  color: #315f9f;
+}
+.drive-backup-status strong,
+.drive-backup-status p {
+  display: block;
+}
+.drive-backup-status p {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin: 3px 0 0;
+}
+.drive-backup-status--up_to_date {
+  background: var(--sage-light);
+}
+.drive-backup-status--up_to_date > svg {
+  color: #46613d;
+}
+.drive-backup-status--offline,
+.drive-backup-status--conflict,
+.drive-backup-status--remote_available,
+.drive-backup-status--error {
+  background: rgba(230, 184, 93, 0.2);
+}
+.drive-backup-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+}
+.drive-backup-preview > div {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+}
+.drive-backup-preview dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.drive-backup-preview dd {
+  margin: 3px 0 0;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.drive-backup-actions {
+  margin-top: 14px;
+}
+.drive-backup-actions + .small-print {
+  margin-bottom: 0;
+}
 .backup-reminder {
   display: flex;
   align-items: flex-start;
@@ -1828,6 +2033,9 @@ code {
     padding: 0 17px;
     top: 0;
   }
+  .app-header-actions {
+    gap: 6px;
+  }
   .wordmark strong {
     font-size: 1.5rem;
   }
@@ -1838,6 +2046,43 @@ code {
     width: 41px;
     height: 41px;
     border-radius: 10px;
+  }
+  .offline-pill--compact {
+    width: 35px;
+    height: 35px;
+    justify-content: center;
+    padding: 0;
+  }
+  .offline-pill--compact > span {
+    display: none;
+  }
+  .drive-status-chip {
+    min-height: 38px;
+    max-width: 144px;
+    padding: 7px 10px;
+    gap: 6px;
+    font-size: 0.7rem;
+  }
+  .drive-status-chip > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .drive-status-popover {
+    top: calc(100% + 10px);
+    padding: 19px;
+  }
+  .drive-conflict-banner {
+    min-height: 58px;
+    top: 70px;
+    gap: 9px;
+    padding: 9px 17px;
+  }
+  .drive-conflict-banner small {
+    display: none;
+  }
+  .drive-conflict-action {
+    font-size: 0.76rem;
   }
   .desktop-add {
     display: none;
@@ -2226,7 +2471,26 @@ code {
   }
 }
 
+@media (max-width: 360px) {
+  .app-header {
+    padding-inline: 12px;
+  }
+  .wordmark {
+    gap: 8px;
+  }
+  .wordmark strong {
+    font-size: 1.3rem;
+  }
+  .drive-status-chip {
+    max-width: 112px;
+    padding-inline: 8px;
+  }
+}
+
 @media (max-width: 340px) {
+  .wordmark > span:not(.brand-mark) {
+    display: none;
+  }
   .empty-illustration {
     width: 90px;
     height: 90px;

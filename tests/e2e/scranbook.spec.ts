@@ -138,6 +138,17 @@ async function openSavedEntry(
   await expect(heading).toBeVisible();
 }
 
+async function openSettingsSection(
+  page: import('@playwright/test').Page,
+  name: string,
+) {
+  const trigger = page.getByRole('button', { name: new RegExp(name) });
+  await expect(trigger).toBeVisible();
+  if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
+    await trigger.click();
+  }
+}
+
 async function seriousAccessibilityViolations(
   page: import('@playwright/test').Page,
 ) {
@@ -273,7 +284,7 @@ function driveBackupCardStatus(
   page: import('@playwright/test').Page,
   label: string,
 ) {
-  return page.locator('.drive-backup-card').getByText(label, { exact: true });
+  return page.locator('.drive-backup-panel').getByText(label, { exact: true });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -351,6 +362,7 @@ test('backs up, reconnects, and restores through mocked Google Drive', async ({
   await page.getByLabel('What was it?').fill('Drive test soup');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
 
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
@@ -391,6 +403,7 @@ test('backs up, reconnects, and restores through mocked Google Drive', async ({
     page.getByRole('button', { name: 'Google Drive backup: Backed up' }),
   ).toBeVisible();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
 
   page.once('dialog', (dialog) => dialog.accept());
@@ -404,8 +417,10 @@ test('backs up, reconnects, and restores through mocked Google Drive', async ({
     page.getByText('Drive backup found', { exact: true }),
   ).toBeHidden();
 
+  await openSettingsSection(page, 'Reset & delete');
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Delete entire diary' }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await expect(page.getByText(/0 saved meals/)).toBeVisible();
   page.once('dialog', (dialog) => dialog.dismiss());
   await page.getByRole('button', { name: 'Restore from Drive' }).click();
@@ -433,6 +448,7 @@ test('offers clear choices when an existing Drive backup is found', async ({
   await page.getByLabel('What was it?').fill('Existing Drive soup');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
   const initialManifest = drive.manifestJson();
@@ -459,6 +475,7 @@ test('offers clear choices when an existing Drive backup is found', async ({
   });
   await page.reload();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
 
   await expect(driveBackupCardStatus(page, 'Drive backup found')).toBeVisible();
@@ -497,6 +514,7 @@ test('cancels restore without discarding an active local draft', async ({
   await page.getByLabel('What was it?').fill('Drive restore source');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
 
@@ -504,6 +522,7 @@ test('cancels restore without discarding an active local draft', async ({
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Unfinished local draft');
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   page.once('dialog', async (dialog) => {
     expect(dialog.message()).toContain('unfinished draft');
     await dialog.dismiss();
@@ -519,6 +538,7 @@ test('handles denied mocked Google authorization safely', async ({ page }) => {
   const drive = new FakeDrive();
   await installMockGoogleDrive(page, drive, { authorization: 'denied' });
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(page.getByText('Reconnect to continue backup')).toBeVisible();
   await expect(page.getByText(/permission was not granted/)).toBeVisible();
@@ -533,6 +553,7 @@ test('keeps offline edits local, resumes online, and requests reconnect after re
   const drive = new FakeDrive();
   await installMockGoogleDrive(page, drive);
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
 
@@ -542,6 +563,7 @@ test('keeps offline edits local, resumes online, and requests reconnect after re
   await page.getByLabel('What was it?').fill('Offline lentil soup');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await expect(
     page.getByText('Changes pending while offline', { exact: true }),
   ).toBeVisible();
@@ -573,6 +595,7 @@ test('coalesces edits made while a mocked Drive backup is in flight', async ({
   const drive = new FakeDrive();
   await installMockGoogleDrive(page, drive);
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
   await page.getByRole('button', { name: 'Back to diary' }).click();
@@ -581,6 +604,7 @@ test('coalesces edits made while a mocked Drive backup is in flight', async ({
   await page.getByLabel('What was it?').fill('First queued title');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
 
   const releaseManifest = drive.delayNextMatching((request) =>
     request.url.includes('uploadType=multipart'),
@@ -593,6 +617,7 @@ test('coalesces edits made while a mocked Drive backup is in flight', async ({
   await page.getByLabel('What was it?').fill('Latest queued title');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
 
   expect(
     drive.requests.filter((request) =>
@@ -623,6 +648,7 @@ test('debounces rapid local edits into one mocked Drive commit', async ({
   await page.getByLabel('What was it?').fill('Before rapid edits');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
   await page.clock.install();
@@ -636,6 +662,7 @@ test('debounces rapid local edits into one mocked Drive commit', async ({
   await page.getByLabel('What was it?').fill('Second rapid edit');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await expect(
     page.getByText('Changes pending', { exact: true }),
   ).toBeVisible();
@@ -668,6 +695,7 @@ test('backs off a mocked transient Drive failure before retrying', async ({
   await page.getByLabel('What was it?').fill('Before retry');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
   await page.clock.install();
@@ -678,6 +706,7 @@ test('backs off a mocked transient Drive failure before retrying', async ({
   await page.getByLabel('What was it?').fill('After retry');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   drive.failNext(503);
   await page.getByRole('button', { name: 'Back up now' }).click();
   await expect(
@@ -712,6 +741,7 @@ test('surfaces a mocked remote conflict without overwriting Drive', async ({
   await page.getByLabel('What was it?').fill('Remote original');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
   await expect(driveBackupCardStatus(page, 'Backed up')).toBeVisible();
 
@@ -726,6 +756,7 @@ test('surfaces a mocked remote conflict without overwriting Drive', async ({
   await page.getByLabel('What was it?').fill('Local conflicting edit');
   await page.getByRole('button', { name: 'Save to this device' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
+  await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Back up now' }).click();
 
   await expect(
@@ -763,7 +794,6 @@ test('analyses a selected image through a mocked compatible endpoint', async ({
     .first()
     .setInputFiles('public/icon-192.png');
   await expect(page.getByAltText('Meal ready to review')).toBeVisible();
-  await page.getByLabel(/I understand this photo goes directly/).check();
   await page.getByRole('button', { name: 'Analyse photo' }).click();
   await expect(page.getByLabel('What was it?')).toHaveValue(
     'Tomato and herb toast',
@@ -797,7 +827,6 @@ test('scans, reviews, scales, and saves a nutrition label', async ({
   await page
     .getByLabel('Choose nutrition label photo')
     .setInputFiles('public/icon-192.png');
-  await page.getByLabel(/I understand this label photo goes directly/).check();
   await page
     .getByRole('button', { name: 'Scan label with configured model' })
     .click();
@@ -905,7 +934,6 @@ test('does not treat recipe quantities as a consumed nutrition estimate', async 
     .locator('input[type="file"]')
     .first()
     .setInputFiles('public/icon-192.png');
-  await page.getByLabel(/I understand this photo goes directly/).check();
   await page.getByRole('button', { name: 'Analyse photo' }).click();
   await expect(page.getByLabel('Kind of image')).toHaveValue('recipe_card');
   await expect(page.getByLabel('Energy (kcal)')).toHaveCount(0);
@@ -959,9 +987,11 @@ test('tests model discovery and exposes privacy controls', async ({
     .getByLabel('Models reported by this endpoint')
     .selectOption('another-vision-model');
   await expect(page.getByText(/Selected another-vision-model/)).toBeVisible();
+  await page.getByRole('button', { name: /Privacy & data/ }).click();
   await expect(
     page.getByRole('link', { name: /plain-language privacy note/ }),
   ).toHaveAttribute('href', '/privacy/');
+  await page.getByRole('button', { name: /Reset & delete/ }).click();
   await expect(
     page.getByRole('button', { name: 'Delete entire diary' }),
   ).toBeVisible();
@@ -1114,38 +1144,37 @@ test('offers guided local-model setup and keyboard-reachable file inputs', async
     .getByRole('button', { name: /Settings/ })
     .last()
     .click();
+  await page.getByText('How this works', { exact: true }).click();
   await expect(page.getByText('Manual entry always works.')).toBeVisible();
   const lmStudio = page.getByRole('button', { name: /^LM Studio/ });
   await expect(lmStudio).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByText('Appears local')).toBeVisible();
+  await expect(page.getByText('Appears local', { exact: true })).toBeVisible();
 
-  await page
-    .getByRole('button', { name: /^Custom compatible endpoint/ })
-    .click();
+  await page.getByRole('button', { name: /^Custom endpoint/ }).click();
   await expect(page.getByLabel('Base URL')).toHaveValue(
     'http://127.0.0.1:1234/v1',
   );
   await page.getByLabel('Base URL').fill('https://models.example.com/v1');
   await page.getByLabel('API key optional').fill('hosted-provider-secret');
-  await page.getByLabel(/I understand that analysed photos/).check();
   await page.getByText('Advanced settings', { exact: true }).click();
   await page
     .getByLabel('Additional request headers (JSON)')
     .fill('{"X-Hosted-Secret":"secret"}');
-  await expect(page.getByText('Remote endpoint')).toBeVisible();
   await expect(
-    page.getByText(/Analysed photos leave this device/),
+    page.getByText('Remote endpoint', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/Photos leave this device only when you choose Analyse/),
   ).toBeVisible();
 
   await lmStudio.click();
   await expect(page.getByText('http://127.0.0.1:1234/v1')).toBeVisible();
   await expect(page.getByLabel('Response mode')).toBeVisible();
   await expect(
-    page.getByLabel(/I understand that analysed photos/),
-  ).not.toBeChecked();
-  await page
-    .getByRole('button', { name: /^Custom compatible endpoint/ })
-    .click();
+    page.getByText('Photos are sent only when you choose Analyse.'),
+  ).toBeVisible();
+  await expect(page.getByText(/I understand/)).toHaveCount(0);
+  await page.getByRole('button', { name: /^Custom endpoint/ }).click();
   await expect(page.getByLabel('API key optional')).toHaveValue('');
   await expect(
     page.getByLabel('Additional request headers (JSON)'),

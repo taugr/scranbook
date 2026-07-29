@@ -136,7 +136,6 @@ test('captures the visual review surfaces', async ({ page }, testInfo) => {
   });
   await startFirstMeal(page);
   await page.locator('input[type="file"]').first().setInputFiles(fixture);
-  await page.getByLabel(/I understand this photo goes directly/).check();
   await page.getByRole('button', { name: 'Analyse photo' }).click();
   await expect(page.getByLabel('What was it?')).toHaveValue(
     'Smoky chilli con carne with rice',
@@ -204,7 +203,6 @@ test('captures nutrition label surfaces', async ({ page }, testInfo) => {
   await page
     .getByLabel('Choose nutrition label photo')
     .setInputFiles('public/icon-192.png');
-  await page.getByLabel(/I understand this label photo goes directly/).check();
   await page
     .getByRole('button', { name: 'Scan label with configured model' })
     .click();

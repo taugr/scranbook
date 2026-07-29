@@ -23,7 +23,6 @@ export function NutritionLabelCapture({
   onCancel,
   onManual,
   onKeepValues,
-  onPrivacyChange,
   onOpenSettings,
 }: {
   photoUrl: string | null;
@@ -37,7 +36,6 @@ export function NutritionLabelCapture({
   onCancel: () => void;
   onManual: () => void;
   onKeepValues: () => void;
-  onPrivacyChange: (checked: boolean) => void;
   onOpenSettings: () => void;
 }) {
   const location = endpointLocation(settings.baseUrl);
@@ -128,17 +126,6 @@ export function NutritionLabelCapture({
                 ? 'This photo will leave the device for a remote endpoint.'
                 : 'Check the endpoint address before scanning.'}
           </p>
-          <label className="privacy-check">
-            <input
-              type="checkbox"
-              checked={settings.privacyAcknowledged}
-              onChange={(event) => onPrivacyChange(event.target.checked)}
-            />
-            <span>
-              I understand this label photo goes directly to my configured model
-              endpoint.
-            </span>
-          </label>
           <div className="analysis-actions">
             <button
               id="scan-nutrition-label"

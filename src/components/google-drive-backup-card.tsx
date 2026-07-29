@@ -71,13 +71,13 @@ export function GoogleDriveBackupCard({
   }
 
   return (
-    <div className="settings-card drive-backup-card">
-      <div className="settings-title">
+    <div className="drive-backup-panel">
+      <div className="settings-subheading">
         <span className="plain-badge">
           <Cloud />
         </span>
         <div>
-          <h2>Google Drive backup</h2>
+          <h3>Google Drive</h3>
           <p>Optional app-open backup and recovery.</p>
         </div>
       </div>

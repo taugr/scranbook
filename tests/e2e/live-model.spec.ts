@@ -32,7 +32,6 @@ test('analyses the recipe-card fixture through browser-direct LM Studio', async 
   await page.getByRole('button', { name: 'Add' }).click();
   await page.locator('input[type="file"]').first().setInputFiles(fixture);
   await expect(page.getByAltText('Meal ready to review')).toBeVisible();
-  await page.getByLabel(/I understand this photo goes directly/).check();
   await page.getByRole('button', { name: 'Analyse photo' }).click();
   await expect(page.getByLabel('What was it?')).toHaveValue(
     /Smoky Chilli Con Carne/i,

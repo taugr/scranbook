@@ -5,8 +5,10 @@ import {
   Calculator,
   Camera,
   Check,
+  ChevronDown,
   ChevronLeft,
   CircleHelp,
+  Cloud,
   Database,
   Download,
   Globe2,
@@ -22,6 +24,7 @@ import {
   Search,
   Settings,
   Share2,
+  ShieldCheck,
   Sparkles,
   Trash2,
   Upload,
@@ -77,6 +80,7 @@ import {
   filterDiaryEntries,
   hasActiveDiaryFilters,
 } from '@/lib/diary-search';
+import { driveBackupPresentation } from '@/lib/drive-backup-presentation';
 import { processImage, rotatePhoto } from '@/lib/image';
 import {
   estimateMealNutrition,
@@ -630,22 +634,10 @@ export function ScranbookApp() {
     await persistDraft(nextDraft, null);
   }
 
-  async function updatePrivacyAcknowledgement(checked: boolean) {
-    const next = { ...modelSettings, privacyAcknowledged: checked };
-    setModelSettings(next);
-    await saveModelSettings(next);
-  }
-
   async function analyse() {
     resetMessages();
     if (!pendingPhoto) {
       setError('Take or choose a photo before asking the model to analyse it.');
-      return;
-    }
-    if (!modelSettings.privacyAcknowledged) {
-      setError(
-        'Please confirm that you understand where the photo will be sent.',
-      );
       return;
     }
     abortRef.current = new AbortController();
@@ -1197,7 +1189,6 @@ export function ScranbookApp() {
       apiKey: '',
       extraHeaders: {},
       responseMode: 'json_schema',
-      privacyAcknowledged: false,
     }));
     setHeaderJson('{}');
     setConnectionStatus(null);
@@ -1233,7 +1224,9 @@ export function ScranbookApp() {
   }
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell${screen === 'settings' ? ' app-shell--settings' : ''}`}
+    >
       <header className="app-header">
         <button
           className="wordmark"
@@ -1452,9 +1445,6 @@ export function ScranbookApp() {
               onManualLabel={() => void enterLabelManually()}
               onKeepLabelValues={() => void keepReviewedLabelValues()}
               onLabelSourceChange={(source) => void applyLabelSource(source)}
-              onPrivacyChange={(checked) =>
-                void updatePrivacyAcknowledgement(checked)
-              }
               onDraftChange={setDraft}
               onIngredientChange={updateIngredient}
               onIngredientRemove={removeIngredient}
@@ -1939,7 +1929,6 @@ function MealEditor({
   onManualLabel,
   onKeepLabelValues,
   onLabelSourceChange,
-  onPrivacyChange,
   onDraftChange,
   onIngredientChange,
   onIngredientRemove,
@@ -1965,7 +1954,6 @@ function MealEditor({
   onManualLabel: () => void;
   onKeepLabelValues: () => void;
   onLabelSourceChange: (source: NutritionLabelSource) => void;
-  onPrivacyChange: (checked: boolean) => void;
   onDraftChange: (entry: MealEntry) => void;
   onIngredientChange: (index: number, patch: Partial<Ingredient>) => void;
   onIngredientRemove: (index: number) => void;
@@ -2042,7 +2030,6 @@ function MealEditor({
               onCancel={onCancelAnalyse}
               onManual={onManualLabel}
               onKeepValues={onKeepLabelValues}
-              onPrivacyChange={onPrivacyChange}
               onOpenSettings={onOpenSettings}
             />
           ) : (
@@ -2103,19 +2090,6 @@ function MealEditor({
                       </p>
                     </div>
                   </div>
-                  <label className="privacy-check">
-                    <input
-                      type="checkbox"
-                      checked={settings.privacyAcknowledged}
-                      onChange={(event) =>
-                        onPrivacyChange(event.target.checked)
-                      }
-                    />
-                    <span>
-                      I understand this photo goes directly to my configured
-                      model endpoint.
-                    </span>
-                  </label>
                   <div className="analysis-actions">
                     <button
                       className="button button--aubergine"
@@ -2543,6 +2517,62 @@ function NutritionEditor({
   );
 }
 
+type SettingsSectionId = 'backup' | 'vision' | 'privacy' | 'reset';
+
+function SettingsDisclosure({
+  id,
+  icon,
+  title,
+  status,
+  open,
+  quiet = false,
+  onToggle,
+  children,
+}: {
+  id: SettingsSectionId;
+  icon: React.ReactNode;
+  title: string;
+  status?: string;
+  open: boolean;
+  quiet?: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const buttonId = `settings-${id}-button`;
+  const panelId = `settings-${id}-panel`;
+  return (
+    <section
+      className={`settings-section${open ? ' settings-section--open' : ''}${quiet ? ' settings-section--quiet' : ''}`}
+    >
+      <button
+        id={buttonId}
+        className="settings-section-trigger"
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={onToggle}
+      >
+        <span className="settings-section-icon">{icon}</span>
+        <span className="settings-section-heading">
+          <strong>{title}</strong>
+          {status && <small>{status}</small>}
+        </span>
+        <ChevronDown className="settings-section-chevron" />
+      </button>
+      {open && (
+        <div
+          id={panelId}
+          className="settings-section-content"
+          role="region"
+          aria-labelledby={buttonId}
+        >
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SettingsPanel({
   settings,
   headerJson,
@@ -2599,10 +2629,31 @@ function SettingsPanel({
   const [setupRoute, setSetupRoute] = useState<'lm-studio' | 'custom'>(() =>
     settings.baseUrl === 'http://127.0.0.1:1234/v1' ? 'lm-studio' : 'custom',
   );
+  const [openSection, setOpenSection] = useState<SettingsSectionId | null>(
+    'vision',
+  );
   const location = endpointLocation(settings.baseUrl);
+  const driveCopy = driveBackupPresentation(driveBackup);
+  const driveStatus =
+    driveBackup.status === 'disconnected'
+      ? 'Drive not connected'
+      : driveCopy.chipLabel;
+  const endpointName =
+    setupRoute === 'lm-studio' ? 'LM Studio' : 'Custom endpoint';
+  const endpointStatus =
+    location === 'local'
+      ? 'Appears local'
+      : location === 'remote'
+        ? 'Remote endpoint'
+        : 'Address needs checking';
+
+  function toggleSection(section: SettingsSectionId) {
+    setOpenSection((current) => (current === section ? null : section));
+  }
+
   return (
-    <section className="settings-page">
-      <div className="stage-heading">
+    <section className="settings-page settings-page--calm">
+      <div className="stage-heading settings-page-heading">
         <button
           className="back-button"
           onClick={onClose}
@@ -2613,28 +2664,105 @@ function SettingsPanel({
           <ChevronLeft /> Back
         </button>
         <div>
-          <p className="eyebrow">Kept on this device</p>
           <h1>Settings & privacy</h1>
+          <p>Everything important, without the noise.</p>
         </div>
       </div>
-      <div className="settings-grid">
-        <div className="settings-card settings-card--model">
-          <div className="settings-title">
-            <span className="sparkle-badge">
-              <Sparkles />
-            </span>
-            <div>
-              <h2>Vision assistance</h2>
-              <p>Optional help from a model you choose.</p>
+      <div className="settings-accordion">
+        <SettingsDisclosure
+          id="backup"
+          icon={<Cloud />}
+          title="Backup & restore"
+          status={`Local diary active · ${driveStatus}`}
+          open={openSection === 'backup'}
+          onToggle={() => toggleSection('backup')}
+        >
+          <div className="backup-settings-layout">
+            <div className="local-diary-panel">
+              <div className="settings-subheading">
+                <Database />
+                <div>
+                  <h3>Your local diary</h3>
+                  <p>
+                    {entryCount} saved meal{entryCount === 1 ? '' : 's'} ·{' '}
+                    {formatBytes(storage?.usage)} used
+                  </p>
+                </div>
+              </div>
+              {storage?.quota && (
+                <div className="storage-meter">
+                  <span
+                    style={{
+                      width: `${Math.min(100, ((storage.usage ?? 0) / storage.quota) * 100)}%`,
+                    }}
+                  />
+                </div>
+              )}
+              <div className="archive-actions">
+                <button type="button" onClick={onShareBackup}>
+                  <Share2 />
+                  <span>
+                    <strong>Share backup</strong>
+                    <small>Create a shareable archive</small>
+                  </span>
+                </button>
+                <button type="button" onClick={onExport}>
+                  <Download />
+                  <span>
+                    <strong>Export diary</strong>
+                    <small>Save a copy on this device</small>
+                  </span>
+                </button>
+                <label className="file-picker">
+                  <Upload />
+                  <span>
+                    <strong>Import archive</strong>
+                    <small>Restore from a backup file</small>
+                  </span>
+                  <input
+                    ref={importRef}
+                    className="visually-hidden"
+                    type="file"
+                    accept=".zip,.scranbook.zip,application/zip"
+                    onChange={(event) => onImport(event.target.files?.[0])}
+                  />
+                </label>
+              </div>
+              <p className="small-print">
+                Archives include entries and processed photos, but never model
+                credentials.
+              </p>
+              {backupState?.lastArchiveCreatedAt && (
+                <p className="last-archive">
+                  Most recent known archive:{' '}
+                  <strong>
+                    {formatDate(backupState.lastArchiveCreatedAt)}
+                  </strong>
+                </p>
+              )}
+              {backupDue && (
+                <BackupReminder
+                  onExport={onExport}
+                  onDismiss={onDismissBackup}
+                />
+              )}
             </div>
+            <GoogleDriveBackupCard
+              controller={driveBackup}
+              localEntryCount={entryCount}
+              hasActiveDraft={hasActiveDraft}
+            />
           </div>
-          <div className="manual-model-callout">
-            <BookOpen />
-            <p>
-              <strong>Manual entry always works.</strong> You do not need a
-              model to keep your diary or calculate nutrition locally.
-            </p>
-          </div>
+        </SettingsDisclosure>
+
+        <SettingsDisclosure
+          id="vision"
+          icon={<Sparkles />}
+          title="Vision assistance"
+          status={`${endpointName} · ${endpointStatus}`}
+          open={openSection === 'vision'}
+          onToggle={() => toggleSection('vision')}
+        >
           <div
             className="model-route-picker"
             role="group"
@@ -2656,7 +2784,6 @@ function SettingsPanel({
               <Laptop />
               <span>
                 <strong>LM Studio</strong>
-                <small>Quick setup for a model running on this device</small>
               </span>
             </button>
             <button
@@ -2671,36 +2798,23 @@ function SettingsPanel({
             >
               <Globe2 />
               <span>
-                <strong>Custom compatible endpoint</strong>
-                <small>
-                  Use another local or hosted OpenAI-compatible service
-                </small>
+                <strong>Custom endpoint</strong>
               </span>
             </button>
           </div>
           {setupRoute === 'lm-studio' ? (
-            <div className="model-route-panel">
-              <p>
-                The local preset is applied. Start LM Studio's server and allow
-                browser requests, then test the connection below.
-              </p>
-              <dl>
-                <div>
-                  <dt>Endpoint</dt>
-                  <dd>http://127.0.0.1:1234/v1</dd>
-                </div>
-                <div>
-                  <dt>Model</dt>
-                  <dd>{settings.model}</dd>
-                </div>
-              </dl>
-            </div>
+            <dl className="model-setting-rows">
+              <div>
+                <dt>Endpoint</dt>
+                <dd>http://127.0.0.1:1234/v1</dd>
+              </div>
+              <div>
+                <dt>Model</dt>
+                <dd>{settings.model}</dd>
+              </div>
+            </dl>
           ) : (
             <div className="custom-model-fields">
-              <p>
-                Connect to any browser-accessible service that implements the
-                OpenAI-compatible models and chat-completions endpoints.
-              </p>
               <label>
                 <span>Base URL</span>
                 <input
@@ -2742,24 +2856,58 @@ function SettingsPanel({
               </label>
             </div>
           )}
-          <div className={`endpoint-location endpoint-location--${location}`}>
-            {location === 'local' ? <Laptop /> : <Globe2 />}
-            <p>
-              <strong>
-                {location === 'local'
-                  ? 'Appears local'
-                  : location === 'remote'
-                    ? 'Remote endpoint'
-                    : 'Check the endpoint address'}
-              </strong>
-              {location === 'local'
-                ? ' This address appears to be on this device or your local network. Photos go directly to it.'
-                : location === 'remote'
-                  ? ' Analysed photos leave this device and go directly to this service.'
-                  : ' Enter a complete http:// or https:// Base URL before testing.'}
-            </p>
+          <div className={`endpoint-summary endpoint-summary--${location}`}>
+            <span>
+              {location === 'local' ? <Laptop /> : <Globe2 />}
+              <strong>{endpointStatus}</strong>
+            </span>
+            <span>
+              <ShieldCheck />{' '}
+              {location === 'remote'
+                ? 'Photos leave this device only when you choose Analyse.'
+                : location === 'invalid'
+                  ? 'No photo is sent until the address is valid and you choose Analyse.'
+                  : 'Photos are sent only when you choose Analyse.'}
+            </span>
           </div>
-          <details className="model-config-details">
+          <div className="settings-actions settings-actions--primary">
+            <button className="button button--primary" onClick={onSave}>
+              <Save /> Save settings
+            </button>
+            <button className="button button--quiet" onClick={onTest}>
+              <RefreshCw /> Test connection
+            </button>
+          </div>
+          {connectionStatus && (
+            <p className="connection-ok" role="status">
+              <Check /> {connectionStatus}
+            </p>
+          )}
+          {availableModels.length > 0 && (
+            <label className="available-models">
+              <span>Models reported by this endpoint</span>
+              <select
+                value={
+                  availableModels.includes(settings.model) ? settings.model : ''
+                }
+                onChange={(event) => onAvailableModelChange(event.target.value)}
+              >
+                <option value="" disabled>
+                  Choose a reported model
+                </option>
+                {availableModels.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+              <small>
+                Availability does not guarantee that every model can analyse
+                images.
+              </small>
+            </label>
+          )}
+          <details className="settings-detail">
             <summary>Advanced settings</summary>
             <div className="field-row">
               <label>
@@ -2806,155 +2954,86 @@ function SettingsPanel({
               />
             </label>
           </details>
-          <label className="privacy-check">
-            <input
-              type="checkbox"
-              checked={settings.privacyAcknowledged}
-              onChange={(event) =>
-                onSettingsChange({
-                  ...settings,
-                  privacyAcknowledged: event.target.checked,
-                })
-              }
-            />
-            <span>
-              I understand that analysed photos go directly to this endpoint.
-            </span>
-          </label>
-          <div className="settings-actions">
-            <button className="button button--primary" onClick={onSave}>
-              <Save /> Save settings
-            </button>
-            <button className="button button--quiet" onClick={onTest}>
-              <RefreshCw /> Test connection
-            </button>
-          </div>
-          {connectionStatus && (
-            <p className="connection-ok">
-              <Check /> {connectionStatus}
-            </p>
-          )}
-          {availableModels.length > 0 && (
-            <label className="available-models">
-              <span>Models reported by this endpoint</span>
-              <select
-                value={
-                  availableModels.includes(settings.model) ? settings.model : ''
-                }
-                onChange={(event) => onAvailableModelChange(event.target.value)}
-              >
-                <option value="" disabled>
-                  Choose a reported model
-                </option>
-                {availableModels.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-              <small>
-                The endpoint reports availability, not whether every model can
-                analyse images. A photo is sent only when you choose Analyse.
-              </small>
-            </label>
-          )}
-          <div className="local-model-tip">
-            <CircleHelp />
-            <p>
-              <strong>Browser connection note.</strong> The endpoint must allow
-              requests from this app. A deployed HTTPS PWA may face CORS,
-              mixed-content, or local-network restrictions even when the same
-              endpoint works from a desktop client.
-            </p>
-          </div>
-        </div>
-
-        <div className="settings-stack">
-          <div className="settings-card">
-            <div className="settings-title">
-              <span className="plain-badge">
-                <LockKeyhole />
-              </span>
-              <div>
-                <h2>Your local diary</h2>
-                <p>
-                  {entryCount} saved meal{entryCount === 1 ? '' : 's'} ·{' '}
-                  {formatBytes(storage?.usage)} used
-                </p>
-              </div>
-            </div>
-            {storage?.quota && (
-              <div className="storage-meter">
-                <span
-                  style={{
-                    width: `${Math.min(100, ((storage.usage ?? 0) / storage.quota) * 100)}%`,
-                  }}
-                />
-              </div>
-            )}
-            <div className="stack-actions">
-              <button
-                className="button button--primary"
-                onClick={onShareBackup}
-              >
-                <Share2 /> Share backup
-              </button>
-              <button className="button button--quiet" onClick={onExport}>
-                <Download /> Export diary
-              </button>
-              <label className="button button--quiet file-picker">
-                <Upload /> Import archive
-                <input
-                  ref={importRef}
-                  className="visually-hidden"
-                  type="file"
-                  accept=".zip,.scranbook.zip,application/zip"
-                  onChange={(event) => onImport(event.target.files?.[0])}
-                />
-              </label>
-            </div>
-            <p className="small-print">
-              Exports include entries and processed photos, but never model
-              credentials.
-            </p>
-            {backupState?.lastArchiveCreatedAt && (
-              <p className="last-archive">
-                Most recent known archive:{' '}
-                <strong>{formatDate(backupState.lastArchiveCreatedAt)}</strong>
+          <details className="settings-detail settings-detail--help">
+            <summary>How this works</summary>
+            <div className="settings-help-copy">
+              <p>
+                <strong>Manual entry always works.</strong> You do not need a
+                model to keep your diary or calculate nutrition locally.
               </p>
-            )}
-            {backupDue && (
-              <BackupReminder onExport={onExport} onDismiss={onDismissBackup} />
-            )}
-          </div>
-          <GoogleDriveBackupCard
-            controller={driveBackup}
-            localEntryCount={entryCount}
-            hasActiveDraft={hasActiveDraft}
-          />
-          <div className="settings-card">
-            <h2>Privacy controls</h2>
-            <p>
-              Scranbook has no account or diary API. Cloudflare serves the app;
-              meal data stays in this browser unless you send a photo to your
-              configured model or explicitly enable Google Drive backup.
-            </p>
-            <Link className="text-link" href="/privacy">
-              Read the plain-language privacy note →
-            </Link>
-            <div className="danger-zone">
-              <button
-                className="button button--danger"
-                onClick={onClearCredentials}
-              >
-                Clear credentials
-              </button>
-              <button className="button button--danger" onClick={onClearDiary}>
-                <Trash2 /> Delete entire diary
-              </button>
+              <p>
+                The endpoint must allow browser requests. A deployed HTTPS app
+                may face CORS, mixed-content, or local-network restrictions.
+              </p>
+            </div>
+          </details>
+        </SettingsDisclosure>
+
+        <SettingsDisclosure
+          id="privacy"
+          icon={<LockKeyhole />}
+          title="Privacy & data"
+          status="No account or diary API"
+          open={openSection === 'privacy'}
+          onToggle={() => toggleSection('privacy')}
+        >
+          <div className="privacy-data-list">
+            <div>
+              <Database />
+              <span>
+                <strong>Diary and processed photos</strong>
+                <small>Stay in this browser as the working copy.</small>
+              </span>
+            </div>
+            <div>
+              <Sparkles />
+              <span>
+                <strong>Model requests</strong>
+                <small>
+                  Go directly to your configured endpoint only when you choose
+                  analysis.
+                </small>
+              </span>
+            </div>
+            <div>
+              <Cloud />
+              <span>
+                <strong>Google Drive</strong>
+                <small>
+                  Optional app-open backup, never the working diary.
+                </small>
+              </span>
             </div>
           </div>
-        </div>
+          <Link className="text-link settings-privacy-link" href="/privacy">
+            Read the plain-language privacy note →
+          </Link>
+        </SettingsDisclosure>
+
+        <SettingsDisclosure
+          id="reset"
+          icon={<Trash2 />}
+          title="Reset & delete"
+          open={openSection === 'reset'}
+          quiet
+          onToggle={() => toggleSection('reset')}
+        >
+          <p className="reset-copy">
+            These actions are separate from backups. Deleting this browser's
+            diary does not remove an existing Drive copy.
+          </p>
+          <div className="danger-zone">
+            <button
+              className="button button--quiet"
+              onClick={onClearCredentials}
+            >
+              <LockKeyhole /> Clear credentials
+            </button>
+            <button className="button button--danger" onClick={onClearDiary}>
+              <Trash2 /> Delete entire diary
+            </button>
+          </div>
+        </SettingsDisclosure>
       </div>
     </section>
   );

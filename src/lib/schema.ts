@@ -252,7 +252,6 @@ export const modelSettingsSchema = z.object({
   timeoutMs: z.number().int().min(1_000).max(300_000),
   maxImageDimension: z.number().int().min(512).max(3_072),
   imageQuality: z.number().min(0.5).max(1),
-  privacyAcknowledged: z.boolean(),
   credentialStorage: z.enum(['device', 'session']),
 });
 
@@ -455,7 +454,6 @@ export const defaultModelSettings: ModelSettings = {
   timeoutMs: 120_000,
   maxImageDimension: 1_600,
   imageQuality: 0.82,
-  privacyAcknowledged: false,
   credentialStorage: 'device',
 };
 

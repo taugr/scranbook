@@ -43,7 +43,6 @@ describe('Scranbook schemas', () => {
       timeoutMs: 10,
       maxImageDimension: 1600,
       imageQuality: 0.82,
-      privacyAcknowledged: true,
       credentialStorage: 'device',
     });
     expect(result.success).toBe(false);

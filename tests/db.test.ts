@@ -180,7 +180,6 @@ describe('local diary database', () => {
       ...defaultModelSettings,
       apiKey: 'secret',
       extraHeaders: { 'X-Test': 'value' },
-      privacyAcknowledged: true,
     });
     expect((await loadModelSettings()).apiKey).toBe('secret');
     const cleared = await clearCredentials();

@@ -1247,6 +1247,12 @@ test('keeps the diary available offline', async ({
     if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
   });
   await page.reload();
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      get: () => false,
+    });
+  });
   await context.setOffline(true);
   await page.reload();
   await openSavedEntry(page, 'Offline soup');

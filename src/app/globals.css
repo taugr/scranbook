@@ -1057,6 +1057,14 @@ a:focus-visible {
   max-height: 580px;
   object-fit: contain;
 }
+.photo-preview--meal {
+  position: relative;
+}
+.photo-preview--meal > img {
+  aspect-ratio: 1;
+  max-height: none;
+  object-fit: cover;
+}
 .photo-tools {
   min-height: 58px;
   display: flex;
@@ -1083,6 +1091,32 @@ a:focus-visible {
 .photo-tools button:hover,
 .photo-tools label:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+.photo-preview--meal .photo-tools {
+  position: absolute;
+  right: 18px;
+  bottom: 14px;
+  left: 18px;
+  min-height: 54px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  background: rgba(51, 42, 39, 0.76);
+  box-shadow: 0 12px 30px rgba(38, 29, 26, 0.22);
+  backdrop-filter: blur(14px);
+}
+.photo-analysis-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 82px;
+  padding: 16px 0 4px;
+}
+.photo-analysis-button {
+  min-width: 190px;
+  min-height: 50px;
+  justify-content: center;
 }
 .analysis-card {
   margin-top: 16px;
@@ -2692,6 +2726,33 @@ code {
   .photo-tools label {
     flex-direction: column;
     font-size: 0.7rem;
+  }
+  .photo-preview--meal > img {
+    aspect-ratio: 5 / 4;
+  }
+  .photo-preview--meal .photo-tools {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    min-height: 46px;
+    padding: 3px 5px;
+  }
+  .photo-preview--meal .photo-tools button,
+  .photo-preview--meal .photo-tools label {
+    flex-direction: row;
+    gap: 5px;
+    min-height: 38px;
+    padding-inline: 8px;
+    font-size: 0.72rem;
+  }
+  .photo-analysis-action {
+    min-height: 68px;
+    padding: 10px 0 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .photo-analysis-button {
+    min-width: min(220px, 72vw);
+    min-height: 46px;
   }
   .form-card,
   .settings-card {

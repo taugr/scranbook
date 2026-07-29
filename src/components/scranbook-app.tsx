@@ -2035,7 +2035,7 @@ function MealEditor({
           ) : (
             <>
               {photoUrl ? (
-                <div className="photo-preview">
+                <div className="photo-preview photo-preview--meal">
                   <img src={photoUrl} alt="Meal ready to review" />
                   <div className="photo-tools">
                     <button onClick={onRotate}>
@@ -2078,42 +2078,22 @@ function MealEditor({
                 </label>
               )}
               {photoUrl && (
-                <div className="analysis-card">
-                  <div>
-                    <span className="sparkle-badge">
-                      <Sparkles />
-                    </span>
-                    <div>
-                      <strong>Ask your model for a first pass</strong>
-                      <p>
-                        {settings.model} via {settings.baseUrl}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="analysis-actions">
+                <div className="photo-analysis-action">
+                  <button
+                    className="button button--primary photo-analysis-button"
+                    onClick={onAnalyse}
+                    disabled={Boolean(busy)}
+                  >
+                    {busy ? 'Analysing photo…' : 'Analyse photo'}
+                  </button>
+                  {busy && (
                     <button
-                      className="button button--aubergine"
-                      onClick={onAnalyse}
-                      disabled={Boolean(busy)}
+                      className="button button--quiet"
+                      onClick={onCancelAnalyse}
                     >
-                      <Sparkles /> Analyse photo
+                      Cancel
                     </button>
-                    {busy && (
-                      <button
-                        className="button button--quiet"
-                        onClick={onCancelAnalyse}
-                      >
-                        Cancel
-                      </button>
-                    )}
-                    <button className="text-button" onClick={onOpenSettings}>
-                      Model settings
-                    </button>
-                  </div>
-                  <p className="manual-entry-note">
-                    Prefer not to use a model? Keep filling in the meal
-                    manually; analysis is always optional.
-                  </p>
+                  )}
                 </div>
               )}
             </>

@@ -794,6 +794,14 @@ test('analyses a selected image through a mocked compatible endpoint', async ({
     .first()
     .setInputFiles('public/icon-192.png');
   await expect(page.getByAltText('Meal ready to review')).toBeVisible();
+  await expect(page.getByText('Ask your model for a first pass')).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole('button', { name: 'Model settings' }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/via http:\/\//)).toHaveCount(0);
+  await expect(page.getByText(/Prefer not to use a model/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Analyse photo' }).click();
   await expect(page.getByLabel('What was it?')).toHaveValue(
     'Tomato and herb toast',

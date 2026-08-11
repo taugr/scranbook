@@ -1,7 +1,7 @@
 # Scranbook Product and Architecture Specification
 
 Status: MVP implemented and deployed; maintained as the product decision record
-Last updated: 2026-07-21
+Last updated: 2026-08-09
 
 Near-term product work is defined in
 [next-features-plan.md](./next-features-plan.md).
@@ -26,7 +26,11 @@ model is configured or the model is unavailable.
 
 ## 2. MVP principles
 
-- No accounts, cookies, analytics, telemetry, or server-side diary storage.
+- No accounts, analytics cookies, persistent analytics identifiers, or
+  server-side diary storage. Production may send an explicit allowlist of
+  cookieless, anonymous page and feature events; it must never send diary
+  content, photos, prompts, credentials, model responses, endpoint addresses,
+  referrers, campaign parameters, or URL query strings.
 - IndexedDB remains the working source of truth for diary entries and photos.
   Settings and model credentials stay on the device. Accepted entries and
   processed photos leave it for backup only after the user explicitly connects

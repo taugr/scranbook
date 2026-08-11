@@ -9,11 +9,11 @@ export default function PrivacyPage() {
       <p className="eyebrow">Plain-language privacy</p>
       <h1>Your diary belongs on your device.</h1>
       <p>
-        Scranbook has no accounts, analytics, advertising, or server-side diary
-        database. By default, meal entries, processed photos, preferences, and
-        any saved model credentials are kept in your browser storage on this
-        device. IndexedDB remains the working copy even if you optionally enable
-        Google Drive backup.
+        Scranbook has no accounts, advertising, or server-side diary database.
+        By default, meal entries, processed photos, preferences, and any saved
+        model credentials are kept in your browser storage on this device.
+        IndexedDB remains the working copy even if you optionally enable Google
+        Drive backup.
       </p>
       <h2>When a photo leaves the device</h2>
       <p>
@@ -30,6 +30,31 @@ export default function PrivacyPage() {
         records or photos to a Scranbook API. As with most websites,
         infrastructure may process ordinary request metadata such as IP address,
         requested URL, and browser headers when serving the app.
+      </p>
+      <h2>Anonymous usage analytics</h2>
+      <p>
+        Scranbook sends a small set of cookieless usage events to PostHog in the
+        EU: page and app-screen views, whether analysis completed or failed, and
+        whether a meal was saved. These events can include basic browser and
+        device metadata, the kind of action, and whether the configured model
+        endpoint appears local or remote.
+      </p>
+      <p>
+        The integration does not send diary text, meal titles, ingredients,
+        nutrition values, photos, prompts, model responses, endpoint addresses,
+        credentials, or Google Drive data. Query strings, URL fragments,
+        referrers, and campaign parameters are removed. Autocapture, session
+        replay, heatmaps, exception capture, performance capture, person
+        profiles, and browser persistence are disabled. PostHog is configured to
+        anonymize IP addresses and use its cookieless mode, so Scranbook does
+        not store an analytics cookie or persistent analytics identifier in the
+        browser.
+      </p>
+      <p>
+        Anonymous usage sharing is on by default. You can stop all future
+        analytics events at any time under{' '}
+        <strong>Settings → Privacy &amp; data</strong>. That preference is
+        stored only in this browser.
       </p>
       <h2>Optional Google Drive backup</h2>
       <p>
@@ -54,11 +79,11 @@ export default function PrivacyPage() {
       </p>
       <h2>Control and deletion</h2>
       <p>
-        Settings lets you share or download a versioned archive, delete the
-        complete local diary, disconnect Google Drive, and separately clear
-        model credentials. Removing site data in your browser also removes
-        Scranbook data from that browser profile, but does not remove a backup
-        already stored in Drive.
+        Settings lets you stop future anonymous analytics, share or download a
+        versioned archive, delete the complete local diary, disconnect Google
+        Drive, and separately clear model credentials. Removing site data in
+        your browser also removes Scranbook data from that browser profile, but
+        does not remove a backup already stored in Drive.
       </p>
       <h2>Local nutrition estimates</h2>
       <p>

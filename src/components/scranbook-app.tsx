@@ -4,6 +4,7 @@ import {
   BookOpen,
   Calculator,
   Camera,
+  ChartNoAxesCombined,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -57,6 +58,11 @@ import {
   dismissBackupReminder,
   isBackupReminderDue,
 } from '@/lib/backup';
+import {
+  analyticsEnabled,
+  captureAnalyticsEvent,
+  setAnalyticsEnabled,
+} from '@/lib/analytics';
 import {
   clearActiveDraft,
   clearCredentials,
@@ -362,6 +368,10 @@ export function ScranbookApp() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [screen, selectedId]);
+
+  useEffect(() => {
+    void captureAnalyticsEvent('screen_viewed', { screen });
+  }, [screen]);
 
   useEffect(() => {
     if (!notice) return;
@@ -690,6 +700,10 @@ export function ScranbookApp() {
         };
         setDraft(nextDraft);
         await persistDraft(nextDraft, pendingPhoto);
+        void captureAnalyticsEvent('analysis_completed', {
+          endpoint_type: endpointLocation(modelSettings.baseUrl),
+          image_kind: 'nutrition_label',
+        });
         setNotice(
           'The printed values were transcribed. Check every number before saving.',
         );
@@ -746,12 +760,20 @@ export function ScranbookApp() {
       };
       setDraft(nextDraft);
       await persistDraft(nextDraft, pendingPhoto);
+      void captureAnalyticsEvent('analysis_completed', {
+        endpoint_type: endpointLocation(modelSettings.baseUrl),
+        image_kind: 'meal',
+      });
       setNotice(
         nutritionEstimate
           ? 'The model made a first pass and nutrition was calculated locally. Check every estimate before saving.'
           : 'The model made a first pass. Check every estimate before saving.',
       );
     } catch (caught) {
+      void captureAnalyticsEvent('analysis_failed', {
+        endpoint_type: endpointLocation(modelSettings.baseUrl),
+        image_kind: labelMode ? 'nutrition_label' : 'meal',
+      });
       setError(errorMessage(caught));
     } finally {
       setBusy(null);
@@ -817,6 +839,17 @@ export function ScranbookApp() {
       setSelectedId(entry.id);
       setScreen('diary');
       setDiaryView('detail');
+      void captureAnalyticsEvent('meal_saved', {
+        analysis_used: Boolean(entry.analysis),
+        entry_kind:
+          entry.nutrition?.source.kind === 'nutrition_label'
+            ? 'nutrition_label'
+            : entry.classification === 'meal'
+              ? 'meal'
+              : 'other',
+        mode: draftMode,
+        photo_present: Boolean(pendingPhoto),
+      });
       setNotice('Saved on this device.');
     } catch (caught) {
       setError(errorMessage(caught));
@@ -2612,6 +2645,8 @@ function SettingsPanel({
   const [openSection, setOpenSection] = useState<SettingsSectionId | null>(
     'vision',
   );
+  const [anonymousAnalyticsEnabled, setAnonymousAnalyticsEnabled] =
+    useState(true);
   const location = endpointLocation(settings.baseUrl);
   const driveCopy = driveBackupPresentation(driveBackup);
   const driveStatus =
@@ -2626,6 +2661,10 @@ function SettingsPanel({
       : location === 'remote'
         ? 'Remote endpoint'
         : 'Address needs checking';
+
+  useEffect(() => {
+    setAnonymousAnalyticsEnabled(analyticsEnabled());
+  }, []);
 
   function toggleSection(section: SettingsSectionId) {
     setOpenSection((current) => (current === section ? null : section));
@@ -2953,7 +2992,7 @@ function SettingsPanel({
           id="privacy"
           icon={<LockKeyhole />}
           title="Privacy & data"
-          status="No account or diary API"
+          status="No account or diary API · anonymous analytics"
           open={openSection === 'privacy'}
           onToggle={() => toggleSection('privacy')}
         >
@@ -2984,7 +3023,31 @@ function SettingsPanel({
                 </small>
               </span>
             </div>
+            <div>
+              <ChartNoAxesCombined />
+              <span>
+                <strong>Anonymous usage analytics</strong>
+                <small>
+                  Cookieless page and feature events only—never diary text,
+                  photos, prompts, credentials, or model responses.
+                </small>
+              </span>
+            </div>
           </div>
+          <label className="analytics-preference">
+            <input
+              type="checkbox"
+              checked={anonymousAnalyticsEnabled}
+              onChange={(event) => {
+                setAnonymousAnalyticsEnabled(event.target.checked);
+                setAnalyticsEnabled(event.target.checked);
+              }}
+            />
+            <span>
+              <strong>Share anonymous usage</strong>
+              <small>You can stop future events at any time.</small>
+            </span>
+          </label>
           <Link className="text-link settings-privacy-link" href="/privacy">
             Read the plain-language privacy note →
           </Link>

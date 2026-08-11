@@ -2047,6 +2047,33 @@ details label {
   line-height: 1.45;
   margin-top: 2px;
 }
+.analytics-preference {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 250, 240, 0.45);
+  cursor: pointer;
+}
+.analytics-preference input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--aubergine);
+}
+.analytics-preference strong,
+.analytics-preference small {
+  display: block;
+}
+.analytics-preference small {
+  color: var(--muted);
+  line-height: 1.45;
+  margin-top: 2px;
+}
 .settings-privacy-link {
   display: inline-block;
   margin-top: 18px;

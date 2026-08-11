@@ -996,6 +996,21 @@ test('tests model discovery and exposes privacy controls', async ({
     .selectOption('another-vision-model');
   await expect(page.getByText(/Selected another-vision-model/)).toBeVisible();
   await page.getByRole('button', { name: /Privacy & data/ }).click();
+  const analyticsPreference = page.getByRole('checkbox', {
+    name: /Share anonymous usage/,
+  });
+  await expect(analyticsPreference).toBeChecked();
+  await analyticsPreference.uncheck();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.localStorage.getItem('scranbook.analytics.enabled'),
+      ),
+    )
+    .toBe('false');
+  await expect(
+    page.getByText(/never diary text, photos, prompts, credentials/),
+  ).toBeVisible();
   await expect(
     page.getByRole('link', { name: /plain-language privacy note/ }),
   ).toHaveAttribute('href', '/privacy/');

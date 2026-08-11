@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Fraunces, Nunito_Sans } from 'next/font/google';
+import { PostHogAnalytics } from '@/components/posthog-analytics';
 import './globals.css';
 
 const display = Fraunces({
@@ -52,7 +53,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`}>
-      <body>{children}</body>
+      <body>
+        <PostHogAnalytics />
+        {children}
+      </body>
     </html>
   );
 }

@@ -16,9 +16,11 @@
 
 Scranbook is a mobile-first Next.js PWA exported as static files and deployed with Cloudflare
 Workers Static Assets. Meal entries and processed photos use IndexedDB as the working copy on the
-user's device. There are no Scranbook accounts, analytics, Worker code, or server-side diary APIs.
-Users can optionally copy accepted entries and processed photos directly from the browser to a
-visible folder in their own Google Drive.
+user's device. There are no Scranbook accounts, Worker code, or server-side diary APIs.
+Scranbook sends a deliberately small set of cookieless, anonymous page and feature events to
+PostHog, never diary content, photos, prompts, credentials, or model responses. Users can stop
+future analytics in Settings. They can optionally copy accepted entries and processed photos
+directly from the browser to a visible folder in their own Google Drive.
 
 When the user explicitly chooses to analyse a photo, the browser sends it directly to their
 configured OpenAI-compatible endpoint. LM Studio with `google/gemma-4-e4b` is the default local
@@ -73,6 +75,18 @@ matches the app. This is a public identifier; never add a Google client secret t
 For local live testing, put the ID in the ignored `.env.local` file and run `pnpm preview:drive`.
 Use a dedicated browser profile and test Google account so live Drive data remains separate from
 normal browsing.
+
+Production analytics uses the public PostHog project key and EU ingest host in `.env.production`.
+The SDK runs only on `scranbook.labs.tau.gr`; local development and browser tests do not send
+events. Copy `.env.example` when configuring another deployment. `NEXT_PUBLIC_POSTHOG_KEY` is a
+public browser identifier—never put a PostHog personal API key in a frontend environment file.
+
+The project-local PostHog CLI can inspect the connected project after browser authorization:
+
+```sh
+pnpm exec posthog-cli login
+pnpm exec posthog-cli api project-get '{}'
+```
 
 For the verified LM Studio profile, start the loopback-only server with browser access enabled:
 

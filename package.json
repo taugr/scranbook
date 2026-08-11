@@ -52,12 +52,14 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.27.0",
     "next": "^16.2.12",
+    "posthog-js": "^1.414.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
+    "@posthog/cli": "^0.10.0",
     "@types/node": "^26.1.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

@@ -9,6 +9,8 @@ overrides:
   string-width: 8.2.1
   brace-expansion@2: 2.1.1
 allowBuilds:
+  '@posthog/cli': true
+  core-js: false
   esbuild: true
   sharp: true
   workerd: true

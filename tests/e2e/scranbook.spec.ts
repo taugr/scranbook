@@ -131,7 +131,7 @@ async function openSavedEntry(
 ) {
   const heading = page.getByRole('heading', { name: title, exact: true });
   const mobileEntry = page
-    .locator('.mobile-entry:visible')
+    .locator('.thread-meal:visible, .mobile-entry:visible')
     .filter({ hasText: title });
   await expect(heading.or(mobileEntry)).toBeVisible();
   if (await mobileEntry.isVisible()) await mobileEntry.click();
@@ -347,10 +347,158 @@ test('creates and retains a manual diary entry', async ({ page }) => {
   await expect(
     page.getByRole('heading', { name: 'Mushroom toast' }),
   ).toBeVisible();
-  await expect(page.getByText('Mushrooms', { exact: true })).toBeVisible();
+  await expect(
+    page.locator('.entry-detail').getByText('Mushrooms', { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Estimated nutrition' }),
   ).toBeVisible();
+});
+
+test('records a post-meal check-in and restores it after reload', async ({
+  page,
+}) => {
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Mushroom toast');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Add check-in' }).click();
+
+  await expect(
+    page.getByRole('heading', { name: 'How did that sit?' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'A little off' }).click();
+  await page.getByRole('button', { name: 'Bloating' }).click();
+  await expect(page.getByRole('button', { name: 'Light' })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  await expect(page.getByLabel('When did it begin?')).toHaveValue('');
+  await page.getByRole('button', { name: 'Light' }).click();
+  await page.getByLabel('When did it begin?').selectOption('1_to_3_hours');
+  await page.getByRole('button', { name: 'Save check-in' }).click();
+
+  await expect(
+    page.locator('.check-in-summary-card').getByText('Bloating · light'),
+  ).toBeVisible();
+
+  await page
+    .locator('.check-in-history')
+    .getByRole('button', { name: 'Edit' })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Edit check-in' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Moderate' }).click();
+  await page.getByLabel('When did it begin?').selectOption('');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(
+    page.locator('.check-in-summary-card').getByText('Bloating · moderate'),
+  ).toBeVisible();
+
+  await page.getByRole('button', { name: 'Check in again' }).click();
+  await page.getByRole('button', { name: 'A little off' }).click();
+  await page.getByRole('button', { name: 'Something else / not sure' }).click();
+  await page.getByRole('button', { name: 'Save check-in' }).click();
+  await expect(page.locator('.check-in-history > li')).toHaveCount(2);
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page
+    .locator('.check-in-history > li')
+    .filter({ hasText: 'Bloating · moderate' })
+    .getByRole('button', { name: 'Delete' })
+    .click();
+  await expect(page.locator('.check-in-history > li')).toHaveCount(1);
+  await page.reload();
+  await openSavedEntry(page, 'Mushroom toast');
+  await expect(
+    page
+      .locator('.check-in-summary-card')
+      .getByText('Something else / not sure'),
+  ).toBeVisible();
+});
+
+test('shows a transparent early signal from checked meals', async ({
+  page,
+}) => {
+  await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('scranbook', 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction('entries', 'readwrite');
+    const store = transaction.objectStore('entries');
+    for (let index = 0; index < 8; index += 1) {
+      const hasOnion = index < 4;
+      const hasBloating = index < 3;
+      const eatenAt = new Date(Date.UTC(2026, 7, 20 - index, 12)).toISOString();
+      const checkInAt = new Date(
+        Date.UTC(2026, 7, 20 - index, 15),
+      ).toISOString();
+      store.put({
+        id: `pattern-meal-${index}`,
+        capturedAt: eatenAt,
+        eatenAt,
+        mealType: 'lunch',
+        title: hasOnion ? `Onion lunch ${index}` : `Rice lunch ${index}`,
+        notes: '',
+        classification: 'meal',
+        servings: null,
+        portionSummary: '',
+        ingredients: [
+          {
+            id: `ingredient-${index}`,
+            name: hasOnion ? 'Onion' : 'Rice',
+            amount: null,
+            unit: null,
+            preparation: null,
+            confidence: 'high',
+            estimatedGrams: null,
+            nutritionMatch: null,
+            nutritionExcluded: false,
+          },
+        ],
+        nutrition: null,
+        photoId: null,
+        analysis: null,
+        checkIns: [
+          {
+            id: `check-in-${index}`,
+            recordedAt: checkInAt,
+            feeling: hasBloating ? 'a_little_off' : 'fine',
+            symptoms: hasBloating ? ['bloating'] : [],
+            severity: hasBloating ? 2 : null,
+            onset: hasBloating ? '1_to_3_hours' : null,
+            notes: '',
+          },
+        ],
+        createdAt: eatenAt,
+        updatedAt: checkInAt,
+      });
+    }
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    database.close();
+  });
+  await page.reload();
+
+  const patternLink = page.getByRole('button', {
+    name: /what you’ve noticed|see what you’ve noticed/i,
+  });
+  await expect(patternLink).toBeVisible();
+  await patternLink.click();
+  await expect(
+    page.getByRole('heading', { name: 'What you’ve noticed' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Onion and bloating' }),
+  ).toBeVisible();
+  await expect(page.getByText('3 of 4', { exact: true })).toBeVisible();
+  await expect(page.getByText('0 of 4', { exact: true })).toBeVisible();
+  await expect(page.getByText('Early signal', { exact: true })).toBeVisible();
+  await expect(page.getByText(/not a diagnosis/i)).toBeVisible();
 });
 
 test('backs up, reconnects, and restores through mocked Google Drive', async ({

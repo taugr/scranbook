@@ -15,6 +15,70 @@ export const mealTypeSchema = z.enum([
   'other',
 ]);
 
+export const mealFeelingSchema = z.enum(['fine', 'a_little_off', 'unwell']);
+export const mealSymptomSchema = z.enum([
+  'bloating',
+  'cramps',
+  'reflux',
+  'nausea',
+  'bowel_changes',
+  'headache',
+  'tiredness',
+  'skin',
+  'other',
+]);
+export const symptomOnsetSchema = z.enum([
+  'within_30_minutes',
+  '30_minutes_to_1_hour',
+  '1_to_3_hours',
+  '3_to_6_hours',
+  'later',
+]);
+
+export const mealCheckInSchema = z
+  .object({
+    id: z.string().min(1),
+    recordedAt: z.string(),
+    feeling: mealFeelingSchema,
+    symptoms: z.array(mealSymptomSchema).max(9),
+    severity: z.number().int().min(1).max(4).nullable(),
+    onset: symptomOnsetSchema.nullable(),
+    notes: z.string().max(1_000),
+  })
+  .superRefine((checkIn, context) => {
+    if (checkIn.feeling === 'fine') {
+      if (checkIn.symptoms.length > 0) {
+        context.addIssue({
+          code: 'custom',
+          path: ['symptoms'],
+          message: 'A symptom-free check-in cannot include symptoms.',
+        });
+      }
+      if (checkIn.severity !== null) {
+        context.addIssue({
+          code: 'custom',
+          path: ['severity'],
+          message: 'A symptom-free check-in cannot include severity.',
+        });
+      }
+      if (checkIn.onset !== null) {
+        context.addIssue({
+          code: 'custom',
+          path: ['onset'],
+          message: 'A symptom-free check-in cannot include onset.',
+        });
+      }
+      return;
+    }
+    if (checkIn.symptoms.length === 0) {
+      context.addIssue({
+        code: 'custom',
+        path: ['symptoms'],
+        message: 'Choose a symptom or Something else / not sure.',
+      });
+    }
+  });
+
 export const nutritionValuesSchema = z.object({
   energyKcal: z.number().finite().nonnegative().nullable(),
   energyKj: z.number().finite().nonnegative().nullable().default(null),
@@ -233,6 +297,7 @@ export const mealEntrySchema = z.object({
   nutrition: mealNutritionSchema.nullable().default(null),
   photoId: z.string().nullable(),
   analysis: analysisMetadataSchema.nullable(),
+  checkIns: z.array(mealCheckInSchema).max(100).default([]),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -275,6 +340,7 @@ const archiveFields = {
 export const archiveManifestSchema = z.discriminatedUnion('version', [
   z.object({ ...archiveFields, version: z.literal(1) }),
   z.object({ ...archiveFields, version: z.literal(2) }),
+  z.object({ ...archiveFields, version: z.literal(3) }),
 ]);
 
 export const storedPhotoSchema = z.object({
@@ -408,6 +474,10 @@ export const driveManifestSchema = z
 export type Confidence = z.infer<typeof confidenceSchema>;
 export type Classification = z.infer<typeof classificationSchema>;
 export type MealType = z.infer<typeof mealTypeSchema>;
+export type MealFeeling = z.infer<typeof mealFeelingSchema>;
+export type MealSymptom = z.infer<typeof mealSymptomSchema>;
+export type SymptomOnset = z.infer<typeof symptomOnsetSchema>;
+export type MealCheckIn = z.infer<typeof mealCheckInSchema>;
 export type Ingredient = z.infer<typeof ingredientSchema>;
 export type NutritionValues = z.infer<typeof nutritionValuesSchema>;
 export type LabelNutrientKey = z.infer<typeof labelNutrientKeySchema>;
@@ -483,6 +553,7 @@ export function createBlankEntry(now = new Date()): MealEntry {
     nutrition: null,
     photoId: null,
     analysis: null,
+    checkIns: [],
     createdAt: timestamp,
     updatedAt: timestamp,
   };

@@ -223,3 +223,123 @@ test('captures nutrition label surfaces', async ({ page }, testInfo) => {
     fullPage: false,
   });
 });
+
+test('captures meal follow-up surfaces', async ({ page }, testInfo) => {
+  test.skip(
+    !captureEnabled,
+    'Set SCRANBOOK_CAPTURE=1 to create review captures.',
+  );
+  test.skip(
+    testInfo.project.name !== 'mobile',
+    'The mobile project is the primary follow-up design reference.',
+  );
+
+  await page.setViewportSize({ width: 426, height: 922 });
+  await page.goto('/');
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('Mushroom toast');
+  await page.getByRole('button', { name: 'Add ingredient' }).click();
+  await page
+    .getByRole('textbox', { name: 'Ingredient', exact: true })
+    .fill('Mushrooms');
+  await page.getByRole('button', { name: 'Save to this device' }).click();
+  const dismiss = page.getByRole('button', { name: 'Dismiss message' });
+  await expect(dismiss).toBeVisible();
+  await dismiss.click();
+  await page
+    .getByLabel('Main navigation')
+    .getByRole('button', { name: 'Diary', exact: true })
+    .click();
+  await page.screenshot({
+    path: 'output/visual-review/mobile-meal-timeline.png',
+    fullPage: false,
+  });
+
+  await page.getByRole('button', { name: 'Add check-in' }).click();
+  await page.getByRole('button', { name: 'A little off' }).click();
+  await page.getByRole('button', { name: 'Bloating' }).click();
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'auto' }));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await page.screenshot({
+    path: 'output/visual-review/mobile-meal-check-in.png',
+    fullPage: false,
+  });
+
+  await page.evaluate(async () => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('scranbook', 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction('entries', 'readwrite');
+    const store = transaction.objectStore('entries');
+    for (let index = 0; index < 8; index += 1) {
+      const hasOnion = index < 4;
+      const hasBloating = index < 3;
+      const eatenAt = new Date(Date.UTC(2026, 7, 20 - index, 12)).toISOString();
+      const checkInAt = new Date(
+        Date.UTC(2026, 7, 20 - index, 15),
+      ).toISOString();
+      store.put({
+        id: `visual-pattern-meal-${index}`,
+        capturedAt: eatenAt,
+        eatenAt,
+        mealType: 'lunch',
+        title: hasOnion
+          ? `Onion lunch ${index + 1}`
+          : `Rice lunch ${index + 1}`,
+        notes: '',
+        classification: 'meal',
+        servings: null,
+        portionSummary: '',
+        ingredients: [
+          {
+            id: `visual-ingredient-${index}`,
+            name: hasOnion ? 'Onion' : 'Rice',
+            amount: null,
+            unit: null,
+            preparation: null,
+            confidence: 'high',
+            estimatedGrams: null,
+            nutritionMatch: null,
+            nutritionExcluded: false,
+          },
+        ],
+        nutrition: null,
+        photoId: null,
+        analysis: null,
+        checkIns: [
+          {
+            id: `visual-check-in-${index}`,
+            recordedAt: checkInAt,
+            feeling: hasBloating ? 'a_little_off' : 'fine',
+            symptoms: hasBloating ? ['bloating'] : [],
+            severity: hasBloating ? 2 : null,
+            onset: hasBloating ? '1_to_3_hours' : null,
+            notes: '',
+          },
+        ],
+        createdAt: eatenAt,
+        updatedAt: checkInAt,
+      });
+    }
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    database.close();
+  });
+  await page.reload();
+  await page
+    .getByRole('button', {
+      name: /what you’ve noticed|see what you’ve noticed/i,
+    })
+    .click();
+  await expect(
+    page.getByRole('heading', { name: 'Onion and bloating' }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: 'output/visual-review/mobile-meal-pattern.png',
+    fullPage: false,
+  });
+});

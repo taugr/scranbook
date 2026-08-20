@@ -43,6 +43,12 @@ import {
   GoogleDriveConflictBanner,
 } from '@/components/google-drive-backup-status';
 import { LabelNutritionSummary } from '@/components/label-nutrition-summary';
+import {
+  MealCheckInPage,
+  MealCheckInSummary,
+  MealPatternPage,
+  MealTimeline,
+} from '@/components/meal-follow-ups';
 import { NutritionLabelCapture } from '@/components/nutrition-label-capture';
 import { NutritionLabelReview } from '@/components/nutrition-label-review';
 import { NutritionMatchPicker } from '@/components/nutrition-match-picker';
@@ -88,6 +94,7 @@ import {
 } from '@/lib/diary-search';
 import { driveBackupPresentation } from '@/lib/drive-backup-presentation';
 import { processImage, rotatePhoto } from '@/lib/image';
+import { createMealCheckIn, findMealPatterns } from '@/lib/meal-check-ins';
 import {
   estimateMealNutrition,
   nutritionMatchForCandidate,
@@ -115,6 +122,7 @@ import {
   type BackupState,
   type DiaryRevisionState,
   type Ingredient,
+  type MealCheckIn,
   type MealDraft,
   type MealEntry,
   type ModelSettings,
@@ -124,7 +132,7 @@ import {
 } from '@/lib/schema';
 import { useGoogleDriveBackup } from '@/lib/use-google-drive-backup';
 
-type Screen = 'diary' | 'add' | 'settings';
+type Screen = 'diary' | 'add' | 'check_in' | 'patterns' | 'settings';
 type ContentScreen = Exclude<Screen, 'settings'>;
 type DiaryView = 'list' | 'detail';
 
@@ -226,6 +234,14 @@ export function ScranbookApp() {
   const [diaryView, setDiaryView] = useState<DiaryView>('list');
   const [entries, setEntries] = useState<MealEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [checkInEntryId, setCheckInEntryId] = useState<string | null>(null);
+  const [editingCheckInId, setEditingCheckInId] = useState<string | null>(null);
+  const [checkInSavingEntryId, setCheckInSavingEntryId] = useState<
+    string | null
+  >(null);
+  const [checkInDeletingId, setCheckInDeletingId] = useState<string | null>(
+    null,
+  );
   const [filters, setFilters] = useState(emptyDiaryFilters);
   const [draft, setDraft] = useState<MealEntry>(() => createBlankEntry());
   const [pendingPhoto, setPendingPhoto] = useState<StoredPhoto | null>(null);
@@ -262,6 +278,7 @@ export function ScranbookApp() {
   const abortRef = useRef<AbortController | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const queuedDraftActionRef = useRef<(() => void) | null>(null);
+  const checkInSaveLockRef = useRef(false);
   const draftGenerationRef = useRef(0);
   const draftSavePromiseRef = useRef<Promise<boolean>>(Promise.resolve(true));
   const pendingUrl = usePhotoUrl(pendingPhoto?.id ?? null, pendingPhoto);
@@ -394,6 +411,20 @@ export function ScranbookApp() {
   const backupDue = useMemo(
     () => isBackupReminderDue(entries, backupState),
     [backupState, entries],
+  );
+  const mealPatterns = useMemo(() => findMealPatterns(entries), [entries]);
+  const checkedMealCount = useMemo(
+    () => entries.filter((entry) => entry.checkIns.length > 0).length,
+    [entries],
+  );
+  const checkInEntry = useMemo(
+    () => entries.find((entry) => entry.id === checkInEntryId) ?? null,
+    [checkInEntryId, entries],
+  );
+  const editingCheckIn = useMemo(
+    () =>
+      checkInEntry?.checkIns.find((checkIn) => checkIn.id === editingCheckInId),
+    [checkInEntry, editingCheckInId],
   );
 
   function resetMessages() {
@@ -1247,6 +1278,106 @@ export function ScranbookApp() {
     setDiaryView('detail');
   }
 
+  function startMealCheckIn(entry: MealEntry, checkIn?: MealCheckIn) {
+    resetMessages();
+    setSelectedId(entry.id);
+    setCheckInEntryId(entry.id);
+    setEditingCheckInId(checkIn?.id ?? null);
+    setScreen('check_in');
+  }
+
+  async function saveMealCheckIn(
+    entry: MealEntry,
+    values: Parameters<typeof createMealCheckIn>[0],
+  ) {
+    if (checkInSaveLockRef.current) return false;
+    checkInSaveLockRef.current = true;
+    setCheckInSavingEntryId(entry.id);
+    setError(null);
+    try {
+      const timestamp = new Date().toISOString();
+      const existing = editingCheckInId
+        ? entry.checkIns.find((checkIn) => checkIn.id === editingCheckInId)
+        : undefined;
+      const nextCheckIn = existing
+        ? { ...existing, ...values }
+        : createMealCheckIn(values);
+      await saveEntry({
+        ...entry,
+        checkIns: existing
+          ? entry.checkIns.map((checkIn) =>
+              checkIn.id === existing.id ? nextCheckIn : checkIn,
+            )
+          : [...entry.checkIns, nextCheckIn],
+        updatedAt: timestamp,
+      });
+      await refresh();
+      setScreen('diary');
+      setDiaryView('detail');
+      setSelectedId(entry.id);
+      setCheckInEntryId(null);
+      setEditingCheckInId(null);
+      setNotice(
+        existing
+          ? 'Check-in updated on this device.'
+          : 'Check-in saved on this device.',
+      );
+      return true;
+    } catch (caught) {
+      setError(`Could not save the check-in: ${errorMessage(caught)}`);
+      return false;
+    } finally {
+      checkInSaveLockRef.current = false;
+      setCheckInSavingEntryId(null);
+    }
+  }
+
+  async function markMealFine(entry: MealEntry) {
+    setEditingCheckInId(null);
+    const saved = await saveMealCheckIn(entry, {
+      feeling: 'fine',
+      symptoms: [],
+      severity: null,
+      onset: null,
+      notes: '',
+    });
+    if (saved) setDiaryView('list');
+  }
+
+  async function removeMealCheckIn(entry: MealEntry, checkIn: MealCheckIn) {
+    const confirmed = window.confirm(
+      'Delete this check-in? The meal will stay in your diary.',
+    );
+    if (!confirmed || checkInSaveLockRef.current) return;
+    checkInSaveLockRef.current = true;
+    setCheckInDeletingId(checkIn.id);
+    setError(null);
+    try {
+      await saveEntry({
+        ...entry,
+        checkIns: entry.checkIns.filter(
+          (candidate) => candidate.id !== checkIn.id,
+        ),
+        updatedAt: new Date().toISOString(),
+      });
+      await refresh();
+      setNotice('Check-in deleted. The meal is still in your diary.');
+    } catch (caught) {
+      setError(`Could not delete the check-in: ${errorMessage(caught)}`);
+    } finally {
+      checkInSaveLockRef.current = false;
+      setCheckInDeletingId(null);
+    }
+  }
+
+  function reviewPatternMeals() {
+    const pattern = mealPatterns[0];
+    if (!pattern) return;
+    setFilters({ ...emptyDiaryFilters, query: pattern.ingredient });
+    setScreen('diary');
+    setDiaryView('list');
+  }
+
   if (loading) {
     return (
       <main className="loading-page">
@@ -1258,7 +1389,7 @@ export function ScranbookApp() {
 
   return (
     <div
-      className={`app-shell${screen === 'settings' ? ' app-shell--settings' : ''}`}
+      className={`app-shell${screen === 'settings' ? ' app-shell--settings' : ''}${screen === 'check_in' ? ' app-shell--check-in' : ''}`}
     >
       <header className="app-header">
         <button
@@ -1336,6 +1467,14 @@ export function ScranbookApp() {
               totalCount={entries.length}
               onChange={setFilters}
             />
+          )}
+          {mealPatterns.length > 0 && (
+            <button
+              className="rail-pattern-link"
+              onClick={() => setScreen('patterns')}
+            >
+              <ChartNoAxesCombined /> What you’ve noticed
+            </button>
           )}
           {recoverableDraft && (
             <DraftCard
@@ -1417,25 +1556,15 @@ export function ScranbookApp() {
                   />
                 )}
                 {filteredEntries.length > 0 ? (
-                  <div className="mobile-entry-list">
-                    {filteredEntries.map((entry) => (
-                      <button
-                        key={entry.id}
-                        className="mobile-entry"
-                        onClick={() => selectEntry(entry)}
-                      >
-                        <MealPhoto entry={entry} />
-                        <span>
-                          <small>
-                            {formatDate(entry.eatenAt)} ·{' '}
-                            {formatTime(entry.eatenAt)}
-                          </small>
-                          <strong>{entry.title}</strong>
-                          <em>{entry.portionSummary || 'A saved meal'}</em>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  <MealTimeline
+                    entries={filteredEntries}
+                    patternAvailable={mealPatterns.length > 0}
+                    onOpenEntry={selectEntry}
+                    onStartCheckIn={startMealCheckIn}
+                    onMarkFine={(entry) => void markMealFine(entry)}
+                    onOpenPatterns={() => setScreen('patterns')}
+                    savingEntryId={checkInSavingEntryId}
+                  />
                 ) : (
                   <NoDiaryResults
                     onClear={() => setFilters(emptyDiaryFilters)}
@@ -1451,6 +1580,14 @@ export function ScranbookApp() {
                     onBack={() => setDiaryView('list')}
                     onEdit={() => startEdit(selected)}
                     onRepeat={() => startRepeat(selected)}
+                    onCheckIn={() => startMealCheckIn(selected)}
+                    onEditCheckIn={(checkIn) =>
+                      startMealCheckIn(selected, checkIn)
+                    }
+                    onDeleteCheckIn={(checkIn) =>
+                      void removeMealCheckIn(selected, checkIn)
+                    }
+                    busyCheckInId={checkInDeletingId}
                     onDelete={() => void removeEntry(selected)}
                   />
                 ) : filtersActive ? (
@@ -1489,6 +1626,31 @@ export function ScranbookApp() {
               onOpenSettings={openSettings}
             />
           )}
+          {screen === 'check_in' && checkInEntry && (
+            <MealCheckInPage
+              key={`${checkInEntry.id}:${editingCheckInId ?? 'new'}`}
+              entry={checkInEntry}
+              initialCheckIn={editingCheckIn}
+              onBack={() => {
+                setScreen('diary');
+                setDiaryView('detail');
+                setCheckInEntryId(null);
+                setEditingCheckInId(null);
+              }}
+              onSave={(checkIn) => saveMealCheckIn(checkInEntry, checkIn)}
+            />
+          )}
+          {screen === 'patterns' && mealPatterns[0] && (
+            <MealPatternPage
+              pattern={mealPatterns[0]}
+              checkedMealCount={checkedMealCount}
+              onBack={() => {
+                setScreen('diary');
+                setDiaryView('list');
+              }}
+              onReview={reviewPatternMeals}
+            />
+          )}
           {screen === 'settings' && (
             <SettingsPanel
               settings={modelSettings}
@@ -1523,7 +1685,11 @@ export function ScranbookApp() {
 
       <nav className="mobile-nav" aria-label="Main navigation">
         <button
-          className={screen === 'diary' ? 'active' : ''}
+          className={
+            screen === 'diary' || screen === 'check_in' || screen === 'patterns'
+              ? 'active'
+              : ''
+          }
           onClick={() => {
             setScreen('diary');
             setDiaryView('list');
@@ -1775,12 +1941,20 @@ function EntryDetail({
   onBack,
   onEdit,
   onRepeat,
+  onCheckIn,
+  onEditCheckIn,
+  onDeleteCheckIn,
+  busyCheckInId,
   onDelete,
 }: {
   entry: MealEntry;
   onBack: () => void;
   onEdit: () => void;
   onRepeat: () => void;
+  onCheckIn: () => void;
+  onEditCheckIn: (checkIn: MealCheckIn) => void;
+  onDeleteCheckIn: (checkIn: MealCheckIn) => void;
+  busyCheckInId: string | null;
   onDelete: () => void;
 }) {
   return (
@@ -1812,6 +1986,13 @@ function EntryDetail({
           <p className="portion-lead">{entry.portionSummary}</p>
         )}
         {entry.nutrition && <NutritionSummary nutrition={entry.nutrition} />}
+        <MealCheckInSummary
+          entry={entry}
+          onAdd={onCheckIn}
+          onEdit={onEditCheckIn}
+          onDelete={onDeleteCheckIn}
+          busyCheckInId={busyCheckInId}
+        />
         <section className="ingredient-card">
           <div className="section-heading">
             <h2>On the plate</h2>

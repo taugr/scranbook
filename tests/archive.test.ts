@@ -11,6 +11,7 @@ import {
   resetDatabaseForTests,
   saveEntry,
 } from '@/lib/db';
+import { createMealCheckIn } from '@/lib/meal-check-ins';
 import {
   createManualNutritionLabelSource,
   scaleNutritionLabel,
@@ -32,7 +33,19 @@ afterEach(clearTestDatabase);
 
 describe('diary archives', () => {
   it('round-trips entries and photos', async () => {
-    const entry = { ...createBlankEntry(), title: 'Soup' };
+    const entry = {
+      ...createBlankEntry(),
+      title: 'Soup',
+      checkIns: [
+        createMealCheckIn({
+          feeling: 'a_little_off',
+          symptoms: ['bloating'],
+          severity: 2,
+          onset: '1_to_3_hours',
+          notes: 'Settled later.',
+        }),
+      ],
+    };
     const photo: StoredPhoto = {
       id: crypto.randomUUID(),
       blob: new Blob(['jpeg-data'], { type: 'image/jpeg' }),
@@ -49,12 +62,16 @@ describe('diary archives', () => {
     const exportedManifest = JSON.parse(
       await exportedZip.file('manifest.json')!.async('string'),
     ) as { version: number };
-    expect(exportedManifest.version).toBe(2);
+    expect(exportedManifest.version).toBe(3);
     await clearTestDatabase();
     const result = await importDiaryArchive(archive);
     expect(result.count).toBe(1);
     expect(result.latestEntryUpdatedAt).toBe(entry.updatedAt);
     expect((await listEntries())[0]?.title).toBe('Soup');
+    expect((await listEntries())[0]?.checkIns[0]).toMatchObject({
+      feeling: 'a_little_off',
+      symptoms: ['bloating'],
+    });
     expect((await getPhoto(photo.id))?.byteSize).toBe(9);
   });
 

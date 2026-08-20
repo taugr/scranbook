@@ -26,6 +26,7 @@ import {
   type DriveSyncState,
   type StoredPhoto,
 } from '@/lib/schema';
+import { createMealCheckIn } from '@/lib/meal-check-ins';
 
 async function clearTestDatabase() {
   await resetDatabaseForTests();
@@ -85,6 +86,25 @@ describe('local diary database', () => {
     await deleteEntry(entry.id);
     expect(await listEntries()).toEqual([]);
     expect(await getPhoto(photo.id)).toBeUndefined();
+  });
+
+  it('persists structured meal follow-ups with the meal', async () => {
+    const entry = createBlankEntry();
+    entry.checkIns.push(
+      createMealCheckIn({
+        feeling: 'unwell',
+        symptoms: ['cramps', 'nausea'],
+        severity: 3,
+        onset: '30_minutes_to_1_hour',
+        notes: '',
+      }),
+    );
+    await saveEntry(entry);
+    expect((await listEntries())[0]?.checkIns[0]).toMatchObject({
+      feeling: 'unwell',
+      symptoms: ['cramps', 'nausea'],
+      severity: 3,
+    });
   });
 
   it('increments the accepted-diary revision with each mutation', async () => {

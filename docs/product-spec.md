@@ -1,7 +1,7 @@
 # Scranbook Product and Architecture Specification
 
 Status: MVP implemented and deployed; maintained as the product decision record
-Last updated: 2026-08-09
+Last updated: 2026-08-20
 
 Near-term product work is defined in
 [next-features-plan.md](./next-features-plan.md).
@@ -52,6 +52,9 @@ model is configured or the model is unavailable.
   offline. AI analysis requires a reachable model endpoint.
 - Optional Drive backup never blocks a local save and runs only while the app is
   open, online, and has a current in-memory access token.
+- Post-meal check-ins are optional diary observations, not medical records or a
+  diagnosis. Possible patterns must remain transparent, evidence-gated, and
+  calculated on the device.
 
 ## 3. Technical direction
 
@@ -106,6 +109,8 @@ Suggested stores:
 - `photoId`: reference to the processed image
 - `analysis`: model name, endpoint origin, prompt/schema version, confidence,
   and analysis timestamp; never an API key
+- `checkIns`: ordered post-meal observations with feeling, optional symptoms,
+  severity, onset, notes, and a recorded timestamp
 - `createdAt` and `updatedAt`
 
 ### `photos`
@@ -538,10 +543,31 @@ live production AI is not a release gate.
   millilitres, or servings only when the printed basis supports that unit.
 - Store structural label provenance and label-specific analysis metadata; never
   describe these totals as ingredient-database estimates.
-- Export archive format version 2 and import both version 1 and version 2
-  archives.
+- Preserve the nutrition-label structures introduced in archive version 2 and
+  continue importing version 1 and version 2 archives.
 
-## 17. Deferred work not included in the current plan
+## 17. Post-meal check-ins and possible patterns
+
+- Offer a quick symptom-free answer and a focused check-in for feeling,
+  symptoms, severity, onset, and an optional note.
+- Store check-ins inside the accepted meal record so IndexedDB, revision
+  tracking, portable archives, and opt-in Drive backup remain coherent.
+- Export archive format version 3 and continue importing version 1 and version 2
+  archives by defaulting missing check-ins to an empty list.
+- Show an early ingredient/symptom signal only after at least eight meals have
+  check-ins, with at least four exposed meals, four comparison meals, and three
+  symptomatic exposed meals. Require at least a 30 percentage-point difference
+  between the two groups.
+- Compare only meals with explicit check-ins. Never infer that a missing
+  check-in means the user felt fine.
+- Do not preselect symptom severity or onset. Let people record that they are
+  unsure, and let them review, edit, or delete every saved check-in.
+- Show the underlying counts and comparison, label the result as an association
+  rather than a cause, and keep all analysis deterministic and on-device.
+- Do not diagnose an intolerance, identify allergens, recommend elimination
+  diets, or position the feature as appropriate for an emergency reaction.
+
+## 18. Deferred work not included in the current plan
 
 - Ingredient-database micronutrient expansion, allergens, or medical guidance.
 - Accounts, simultaneous multi-device editing, social features, shared diaries,

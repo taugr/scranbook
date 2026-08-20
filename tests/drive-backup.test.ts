@@ -44,7 +44,21 @@ describe('Drive backup orchestration', () => {
   });
 
   it('backs up local entries after their IndexedDB transaction completes', async () => {
-    const entry = { ...createBlankEntry(), title: 'Soup' };
+    const entry = {
+      ...createBlankEntry(),
+      title: 'Soup',
+      checkIns: [
+        {
+          id: 'check-in-1',
+          recordedAt: '2026-08-20T13:00:00.000Z',
+          feeling: 'a_little_off' as const,
+          symptoms: ['bloating' as const],
+          severity: 2,
+          onset: '1_to_3_hours' as const,
+          notes: '',
+        },
+      ],
+    };
     const photo: StoredPhoto = {
       id: 'photo-1',
       blob: new Blob(['photo-data'], { type: 'image/jpeg' }),
@@ -67,7 +81,12 @@ describe('Drive backup orchestration', () => {
       false,
     );
     expect(drive.manifestJson()).toMatchObject({
-      entries: [{ title: 'Soup' }],
+      entries: [
+        {
+          title: 'Soup',
+          checkIns: [{ symptoms: ['bloating'] }],
+        },
+      ],
       photos: [{ id: photo.id }],
     });
     expect(drive.filesWithRole('photo')).toHaveLength(1);

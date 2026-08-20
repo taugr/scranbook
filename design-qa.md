@@ -1,82 +1,67 @@
-**Findings**
+# Meal follow-up design QA
+
+## Findings
 
 - No actionable P0, P1, or P2 differences remain.
-- [P3] The rendered preview uses `public/icon-192.png` as the deterministic upload fixture instead of the meal photograph in the approved visuals. This is expected content variation; the crop, overlay, toolbar, and action treatment are still directly comparable.
-- [P3] The existing Scranbook mobile editor heading and form-card treatment remain intact around the redesigned photo-analysis region. Preserving that product shell keeps this change scoped to simplifying photo analysis rather than introducing a separate Add Meal redesign.
+- [P3] The implementation keeps Scranbook's existing diary search and filter controls above the mobile timeline. The visual target omitted those established controls; retaining them preserves the current diary workflow without weakening the timeline hierarchy.
+- [P3] The comparison uses a cautious eight-meal evidence set rather than the illustrative source. The implementation intentionally reports its real `3 of 4` and `0 of 4` counts rather than copying decorative values.
 
-**Comparison Target**
+## Comparison target
 
-- Approved mobile visual: `/Users/tomauger/.codex/generated_images/019faaa4-63bf-7cb0-b1f3-713ff771c23d/exec-ffd65265-a6f1-46fa-bfe2-6564c8d81215.png`
-- Approved desktop visual: `/Users/tomauger/.codex/generated_images/019faaa4-63bf-7cb0-b1f3-713ff771c23d/exec-8cdd0d8d-cf97-44b6-8177-37a9ef13ac23.png`
-- Implementation files: `src/components/scranbook-app.tsx`, `src/app/globals.css`
-- Browser-rendered preview: `http://localhost:3000`
-- Mobile implementation screenshot: `output/product-design/add-meal-simplification/implementation-mobile-390x844-final.png`
-- Desktop implementation screenshot: `output/product-design/add-meal-simplification/implementation-desktop-1440x1024-final.png`
-- State: Add Meal, Meal photo selected, photo uploaded, pre-analysis, light theme.
+- Timeline visual: `/Users/tomauger/.codex/generated_images/01a01dea-699f-7f11-9cf1-348b89b11220/exec-aeed91ca-c419-41d6-9fd9-e196a9af0253.png`
+- Check-in visual: `/Users/tomauger/.codex/generated_images/01a01dea-699f-7f11-9cf1-348b89b11220/exec-8d637d50-78d4-45b5-b30f-c0dc9f5dae30.png`
+- Pattern visual: `/Users/tomauger/.codex/generated_images/01a01dea-699f-7f11-9cf1-348b89b11220/exec-64f03c77-20ff-4979-ba2a-a6cb354a9ce4.png`
+- Browser-rendered preview: `http://localhost:3000/`
+- Implementation screenshots:
+  - `output/visual-review/mobile-meal-timeline.png`
+  - `output/visual-review/mobile-meal-check-in.png`
+  - `output/visual-review/mobile-meal-pattern.png`
+- Same-input comparison: `output/visual-review/meal-follow-up-design-comparison.png`
 
-**Viewport and Normalization**
+## Viewport and state
 
-- Mobile CSS viewport and implementation pixels: 390 x 844 at 1x.
-- Mobile source pixels: 853 x 1844, normalized to 390 x 844 for comparison. The source's effective density is approximately 2.187x; its aspect ratio differs by less than 0.03%, so normalization does not materially distort the layout.
-- Desktop CSS viewport and implementation pixels: 1440 x 1024 at 1x.
-- Desktop source pixels: 1487 x 1058, normalized to 1440 x 1024 for comparison. The aspect ratios differ by less than 0.03%.
-- Each source and implementation pair was composited into a single same-state comparison image before visual judgment.
+- Source images are 853 x 1844 pixels, representing an approximately 426 x 922 mobile viewport at 2x density.
+- Implementation captures use a 426 x 922 CSS viewport and were normalized to the same 426 x 922 comparison size.
+- Timeline state: a saved lunch with ingredient context and an unanswered follow-up.
+- Check-in state: `A little off` and `Bloating`, with severity unset and onset at `Not sure` until the person chooses them.
+- Pattern state: onion appears in four checked meals, bloating follows three, and the four checked comparison meals report no bloating.
+- Every source/implementation pair was composited side by side before judging fidelity.
 
-**Full-view Comparison Evidence**
+## Fidelity evidence
 
-- Mobile comparison: `output/product-design/add-meal-simplification/comparison-mobile-final.png`
-- Desktop comparison: `output/product-design/add-meal-simplification/comparison-desktop-final.png`
-- Both layouts preserve the approved progression: photo or label selector, large photo, in-image Rotate/Replace/Remove toolbar, one centred Analyse photo action, then meal fields.
-- Desktop keeps the approved split layout with photo analysis on the left and meal fields on the right.
-- Mobile uses a compact 5:4 photo, a 46 px overlay toolbar, and a 46 px primary button so the form begins within the initial viewport.
-- Desktop and mobile both have matching client and scroll widths, with no horizontal overflow.
+- Typography and hierarchy preserve Scranbook's Fraunces/Nunito notebook system, with display headings, compact factual labels, and clear primary actions.
+- The timeline retains the approved chronological thread, quiet meal context, warm follow-up card, fast `Felt fine` path, and non-causal caution.
+- The check-in keeps the approved single-screen progression and fits feeling, symptoms, severity, onset, note, save, privacy cue, and bottom navigation in the reference viewport.
+- The pattern view shows the underlying with/without counts, proportional comparison bars, onset, evidence size, diagnostic caution, review action, and method disclosure.
+- Existing paper, ink, tomato, sage, butter, border, and shadow tokens are reused. Lucide supplies every new icon; no placeholder artwork, emoji, CSS drawing, or handcrafted SVG was added.
+- Mobile tap targets remain practical, content does not overflow horizontally, and the check-in wordmark remains stable when the flow starts from a scrolled diary.
 
-**Focused Region Evidence**
+## Interaction, persistence, and safety evidence
 
-- Mobile photo/action comparison: `output/product-design/add-meal-simplification/comparison-mobile-focus-final.png`
-- Desktop photo/action comparison: `output/product-design/add-meal-simplification/comparison-desktop-focus-final.png`
-- The focused comparisons confirm the same three secondary actions, dark translucent overlay, centred tomato primary action, quiet divider, and absence of any model/status/privacy card.
-- The approved action label is preserved exactly as `Analyse photo`, without a model name or decorative status language.
+- Browser-tested manual meal save, neutral detail defaults, an uncertain symptom, editing without duplication, deletion, and persistence after reload.
+- Browser-tested stronger evidence gating and opening the early-signal view on standard mobile, narrow mobile, and desktop.
+- Unchecked meals are excluded from the symptom-free comparison; the UI exposes real numerator and denominator values and labels the result as an association rather than a cause.
+- Check-ins use the existing local entry transaction and diary revision path, round-trip through version 3 portable archives, and remain included in opt-in Drive backup.
+- Privacy copy confirms that symptom content is excluded from analytics and that pattern calculation is on-device.
+- The running in-app preview reported no console warnings or errors, and its document width matched its 1280-pixel viewport.
 
-**Required Fidelity Surfaces**
+## Verification
 
-- Fonts and typography: The existing Scranbook Fraunces and Nunito families are preserved. Display hierarchy, control weights, labels, wrapping, and contrast align with the approved visuals without truncation.
-- Spacing and layout rhythm: Photo proportions, overlay placement, action spacing, desktop split, and mobile vertical rhythm match the selected direction while retaining practical tap targets.
-- Colors and visual tokens: Existing paper, ink, aubergine, tomato, line, and muted tokens are reused. The toolbar remains legible over varied imagery through a translucent dark surface and backdrop blur.
-- Image quality and asset fidelity: The uploaded image is rendered with `object-fit: cover`; existing Lucide icons are used for all controls. No placeholder art, CSS drawing, emoji, or handcrafted SVG was introduced.
-- Copy and content: Repeated permission confirmations, privacy warnings, provider/model details, readiness status, reassurance copy, and the Model settings shortcut are absent. The primary action is short and task-focused.
+- Unit/integration: 15 files, 105 tests passed.
+- Full serial browser regression: 68 passed, 29 intentional skips.
+- Final feature and serious-accessibility run: 9 passed across mobile, narrow mobile, and desktop.
+- Opt-in visual capture: 1 passed.
+- TypeScript, lint, formatting, production build, and `git diff --check` passed.
 
-**Responsive, Interaction, and Accessibility Evidence**
+## Comparison history
 
-- Tested browser-rendered layouts at 390 x 844 and 1440 x 1024.
-- Tested opening Add Meal, resuming the draft, selecting a photo, switching responsive sizes, and rendering the photo toolbar and primary action.
-- The mocked end-to-end analysis path passes after the simplification, including upload, analysis progress, populated meal data, and the existing review flow.
-- The full browser suite passed: 61 passed and 24 intentional skips. Its serious accessibility checks passed.
-- Browser console warnings and errors checked at both final viewports: none.
-- The photo-analysis region contains zero checkbox inputs, no repeated consent copy, and no model-specific label.
+1. Pass 1 found P2 mobile-density issues: the check-in did not fit the reference viewport and the pattern evidence was pushed below the fold. Mobile type, spacing, controls, and evidence rhythm were compacted while keeping tap targets usable.
+2. Pass 1 also found a P2 state issue: the check-in could inherit the diary's scroll position and omit the wordmark. The mobile check-in header was made stable and its workspace offset explicitly reserved.
+3. Pass 2 used a fresh production build, captured all three states at the exact reference viewport, and confirmed the full check-in plus the pattern evidence and review action fit the approved hierarchy.
+4. The final side-by-side comparison found no remaining P0, P1, or P2 differences.
 
-**Comparison History**
+## Open questions
 
-1. Pass 1 found a P2 fidelity issue: the Analyse photo control still included a decorative sparkle that was absent from the approved visual. The icon was removed so the action reads as a direct task rather than a model feature.
-2. Pass 1 also found a P2 mobile-density issue: the image/action region was too tall and delayed the meal form. The mobile photo was set to 5:4, the toolbar to 46 px, and the action area to 68 px with a 46 px button.
-3. Pass 2 confirmed the corrected mobile density and button treatment in `implementation-mobile-390x844-v2.png`.
-4. The final full and focused comparisons found no remaining P0, P1, or P2 differences.
-
-**Open Questions**
-
-- None blocking handoff.
-
-**Implementation Checklist**
-
-- [x] Remove repeated privacy warnings and acknowledgement controls.
-- [x] Remove provider/model names, readiness labels, and the Model settings shortcut.
-- [x] Keep one clear Analyse photo action beneath the image.
-- [x] Move photo tools onto the image as a compact overlay.
-- [x] Preserve the existing Nutrition label path and Add Meal form behavior.
-- [x] Verify mobile and desktop layout, overflow, console, accessibility, build, browser flow, unit tests, lint, formatting, and types.
-
-**Follow-up Polish**
-
-- None required before manual review.
+- None blocking manual review.
 
 final result: passed

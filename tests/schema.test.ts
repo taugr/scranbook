@@ -4,6 +4,7 @@ import {
   createRepeatedEntry,
   mealDraftSchema,
   mealAnalysisSchema,
+  mealCheckInSchema,
   mealEntrySchema,
   modelSettingsSchema,
 } from '@/lib/schema';
@@ -17,7 +18,54 @@ describe('Scranbook schemas', () => {
     const entry = createBlankEntry(new Date('2026-07-12T12:00:00.000Z'));
     expect(mealEntrySchema.parse(entry)).toEqual(entry);
     expect(entry.ingredients).toEqual([]);
+    expect(entry.checkIns).toEqual([]);
     expect(entry.photoId).toBeNull();
+  });
+
+  it('adds an empty follow-up list to legacy meals', () => {
+    const legacy = createBlankEntry();
+    delete (legacy as Partial<typeof legacy>).checkIns;
+    expect(mealEntrySchema.parse(legacy).checkIns).toEqual([]);
+  });
+
+  it('rejects contradictory meal check-ins', () => {
+    const base = {
+      id: 'check-in-1',
+      recordedAt: '2026-08-20T12:00:00.000Z',
+      notes: '',
+    };
+    expect(
+      mealCheckInSchema.safeParse({
+        ...base,
+        feeling: 'fine',
+        symptoms: ['bloating'],
+        severity: 2,
+        onset: '1_to_3_hours',
+      }).success,
+    ).toBe(false);
+    expect(
+      mealCheckInSchema.safeParse({
+        ...base,
+        feeling: 'unwell',
+        symptoms: [],
+        severity: null,
+        onset: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts uncertain symptoms without invented severity or timing', () => {
+    expect(
+      mealCheckInSchema.safeParse({
+        id: 'check-in-2',
+        recordedAt: '2026-08-20T12:00:00.000Z',
+        feeling: 'a_little_off',
+        symptoms: ['other'],
+        severity: null,
+        onset: null,
+        notes: 'Hard to describe',
+      }).success,
+    ).toBe(true);
   });
 
   it('rejects impossible portions and invalid confidence', () => {

@@ -32,6 +32,10 @@ development profile, but the provider is configurable.
 - Manual diary entry that works without an AI model.
 - Recoverable local drafts, including an unfinished processed photo.
 - Diary text search, date/meal/image filters, and a purpose-built Log again flow.
+- Post-meal check-ins for how a meal felt, including optional symptoms, severity,
+  timing, and notes.
+- On-device possible-pattern summaries that compare checked meals with and
+  without an ingredient, and never treat an unchecked meal as symptom-free.
 - Editable dish, portion, ingredient, confidence, and uncertainty fields.
 - Editable calorie and macro estimates calculated locally from bundled official
   food-composition data.
@@ -40,8 +44,8 @@ development profile, but the provider is configurable.
   millilitres, or servings.
 - Reviewable nutrition matches with local-record selection and ingredient exclusion.
 - Local IndexedDB persistence with export, import, deletion, storage visibility, and
-  gentle archive reminders. Version 2 archives preserve reviewed label provenance
-  and remain able to import version 1 backups.
+  gentle archive reminders. Version 3 archives preserve meal check-ins and
+  reviewed label provenance, and remain able to import version 1 and 2 backups.
 - Provider-neutral backup sharing through the operating-system share sheet where supported, with
   direct archive download as the fallback.
 - Optional browser-direct Google Drive backup while the app is open, including pending/offline
@@ -143,7 +147,8 @@ nutrition API at runtime. See [docs/nutrition-data.md](./docs/nutrition-data.md)
 ## Privacy
 
 Scranbook has no diary backend. Cloudflare serves the application files, while IndexedDB remains
-the working copy for entries and photos. Model settings and credentials stay in browser storage.
+the working copy for entries, meal check-ins, and photos. Possible-pattern analysis runs entirely
+in the browser. Model settings and credentials stay in browser storage.
 A photo leaves the device when the user chooses to analyse a meal photo or scan a label, and then
 travels directly to the configured endpoint. If the user explicitly enables Google Drive backup,
 accepted entries and processed photos are also copied directly from the browser to their Drive;

@@ -10,10 +10,10 @@ export default function PrivacyPage() {
       <h1>Your diary belongs on your device.</h1>
       <p>
         Scranbook has no accounts, advertising, or server-side diary database.
-        By default, meal entries, processed photos, preferences, and any saved
-        model credentials are kept in your browser storage on this device.
-        IndexedDB remains the working copy even if you optionally enable Google
-        Drive backup.
+        By default, meal entries, post-meal check-ins, processed photos,
+        preferences, and any saved model credentials are kept in your browser
+        storage on this device. IndexedDB remains the working copy even if you
+        optionally enable Google Drive backup.
       </p>
       <h2>When a photo leaves the device</h2>
       <p>
@@ -41,14 +41,14 @@ export default function PrivacyPage() {
       </p>
       <p>
         The integration does not send diary text, meal titles, ingredients,
-        nutrition values, photos, prompts, model responses, endpoint addresses,
-        credentials, or Google Drive data. Query strings, URL fragments,
-        referrers, and campaign parameters are removed. Autocapture, session
-        replay, heatmaps, exception capture, performance capture, person
-        profiles, and browser persistence are disabled. PostHog is configured to
-        anonymize IP addresses and use its cookieless mode, so Scranbook does
-        not store an analytics cookie or persistent analytics identifier in the
-        browser.
+        check-in answers, symptoms, nutrition values, photos, prompts, model
+        responses, endpoint addresses, credentials, or Google Drive data. Query
+        strings, URL fragments, referrers, and campaign parameters are removed.
+        Autocapture, session replay, heatmaps, exception capture, performance
+        capture, person profiles, and browser persistence are disabled. PostHog
+        is configured to anonymize IP addresses and use its cookieless mode, so
+        Scranbook does not store an analytics cookie or persistent analytics
+        identifier in the browser.
       </p>
       <p>
         Anonymous usage sharing is on by default. You can stop all future
@@ -60,9 +60,9 @@ export default function PrivacyPage() {
       <p>
         If you choose <strong>Connect Google Drive</strong>, Scranbook asks only
         for permission to manage files it creates or that you explicitly share
-        with it. The browser copies accepted diary entries and processed photos
-        directly to a visible Scranbook folder in your Google Drive. Cloudflare
-        does not receive those backup requests.
+        with it. The browser copies accepted diary entries, their check-ins, and
+        processed photos directly to a visible Scranbook folder in your Google
+        Drive. Cloudflare does not receive those backup requests.
       </p>
       <p>
         Model credentials, custom request headers, Google access tokens,
@@ -76,6 +76,14 @@ export default function PrivacyPage() {
         diary or existing files in Drive. You can also revoke permission from
         your Google Account. Restoring from Drive validates the complete backup
         and asks before replacing the diary stored in this browser.
+      </p>
+      <h2>Meal check-ins and possible patterns</h2>
+      <p>
+        How-you-felt answers and optional symptom notes are stored as part of
+        the related meal. Scranbook compares checked meals on this device to
+        surface possible associations. It does not send those details to an
+        analysis service, and it never assumes that an unchecked meal was
+        symptom-free.
       </p>
       <h2>Control and deletion</h2>
       <p>
@@ -119,9 +127,11 @@ export default function PrivacyPage() {
       <p>
         Ingredient recognition, portion weights, database matches, label
         transcription, and nutritional totals may be incomplete or incorrect.
-        They are not allergy, medical, or food-safety advice. Locally stored
-        credentials can be read by code running under the Scranbook origin;
-        session-only credential storage is available for reduced persistence.
+        They and any possible meal patterns are not a diagnosis, allergy,
+        medical, or food-safety advice. Scranbook is not designed for tracking
+        an emergency allergic reaction. Locally stored credentials can be read
+        by code running under the Scranbook origin; session-only credential
+        storage is available for reduced persistence.
       </p>
     </main>
   );

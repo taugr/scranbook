@@ -159,7 +159,9 @@ export async function capturePageView(pathname: string) {
 }
 
 type AnalyticsEventProperties = {
-  screen_viewed: { screen: 'diary' | 'add' | 'settings' };
+  screen_viewed: {
+    screen: 'diary' | 'add' | 'check_in' | 'patterns' | 'settings';
+  };
   analysis_completed: {
     endpoint_type: 'local' | 'remote' | 'invalid';
     image_kind: 'meal' | 'nutrition_label';

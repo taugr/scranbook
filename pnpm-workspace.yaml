@@ -3,11 +3,11 @@ minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 blockExoticSubdeps: true
 overrides:
-  '@aws-sdk/middleware-sdk-s3': 3.972.54
-  '@aws-sdk/signature-v4-multi-region': 3.996.35
-  postcss: 8.5.16
-  string-width: 8.2.1
-  brace-expansion@2: 2.1.1
+  '@aws-sdk/middleware-sdk-s3': 3.972.75
+  '@aws-sdk/signature-v4-multi-region': 3.996.46
+  postcss: 8.5.26
+  string-width: 8.2.2
+  brace-expansion@2: 2.1.4
 allowBuilds:
   '@posthog/cli': true
   core-js: false

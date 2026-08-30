@@ -278,7 +278,10 @@ async function main() {
     `${JSON.stringify({
       version: 'fdc-2026-04-30_fndds-2024-10-31_cofid-2021',
       generatedAt: '2026-07-12',
-      sources: Object.values(sources).map(({ url: _, ...source }) => source),
+      sources: Object.values(sources).map(({ url, ...source }) => {
+        void url;
+        return source;
+      }),
       foods,
     })}\n`,
   );

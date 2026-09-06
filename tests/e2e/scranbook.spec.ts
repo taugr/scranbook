@@ -319,6 +319,93 @@ test('empty mobile diary fits without page scrolling', async ({
   );
 });
 
+test('quick entry keeps essentials visible and saves a compact meal without a photo', async ({
+  page,
+}, testInfo) => {
+  if (testInfo.project.name !== 'desktop') {
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+  await startFirstMeal(page);
+  await expect(
+    page.getByRole('button', { name: 'Write a meal' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByLabel('What was it?')).toBeInViewport();
+  await expect(page.getByLabel('When', { exact: true })).toBeInViewport();
+  await expect(
+    page.getByRole('button', { name: 'Save meal', exact: true }),
+  ).toBeInViewport();
+  const date = await page.getByLabel('When', { exact: true }).boundingBox();
+  const saveBar = await page.locator('.editor-save-bar').boundingBox();
+  expect(date!.y + date!.height).toBeLessThanOrEqual(saveBar!.y);
+  await expect(page.locator('.camera-drop')).toBeHidden();
+  await expect(
+    page.getByRole('button', { name: 'Add ingredient' }),
+  ).toBeHidden();
+  await expect(
+    page.getByRole('button', { name: 'Calculate locally' }),
+  ).toBeHidden();
+  expect(await seriousAccessibilityViolations(page)).toEqual([]);
+
+  await page.getByLabel('What was it?').fill('Tomato and mozzarella toast');
+  await page.getByLabel('Portion').fill('Two slices');
+  await page.getByRole('button', { name: 'Meal photo', exact: true }).click();
+  await expect(page.locator('.camera-drop')).toBeVisible();
+  await page.getByRole('button', { name: 'Write a meal' }).click();
+  await expect(page.getByLabel('What was it?')).toHaveValue(
+    'Tomato and mozzarella toast',
+  );
+  await page.getByRole('button', { name: 'Save meal', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Tomato and mozzarella toast' }),
+  ).toBeInViewport();
+  await expect(page.locator('.entry-hero')).toHaveCount(0);
+  await expect(page.locator('.entry-date-inline')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Edit', exact: true }),
+  ).toBeInViewport();
+  await expect(
+    page.getByRole('button', { name: 'Log again', exact: true }),
+  ).toBeInViewport();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await expect(page.getByLabel('Portion')).toHaveValue('Two slices');
+  await expect(
+    page.getByRole('button', { name: 'Write a meal' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('meal entry preserves photos and respects cancelled label switches', async ({
+  page,
+}) => {
+  await startFirstMeal(page);
+  await page.getByLabel('What was it?').fill('A meal with a photo');
+  await page.getByRole('button', { name: 'Meal photo', exact: true }).click();
+  await page
+    .locator('input[type="file"]')
+    .first()
+    .setInputFiles('public/icon-192.png');
+  await expect(page.getByAltText('Meal ready to review')).toBeVisible();
+  await page.getByRole('button', { name: 'Write a meal' }).click();
+  await expect(page.getByText('Photo attached.')).toBeVisible();
+  await page.getByRole('button', { name: 'View photo' }).click();
+  await expect(page.getByAltText('Meal ready to review')).toBeVisible();
+  await page.getByRole('button', { name: 'Scan label', exact: true }).click();
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.getByRole('button', { name: 'Write a meal' }).click();
+  await expect(
+    page.getByRole('button', { name: 'Scan label', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Write a meal' }).click();
+  await expect(page.getByLabel('What was it?')).toHaveValue(
+    'A meal with a photo',
+  );
+  await page.getByRole('button', { name: 'Save meal', exact: true }).click();
+  await expect(page.locator('.entry-hero img')).toBeVisible();
+  await page.reload();
+  await openSavedEntry(page, 'A meal with a photo');
+  await expect(page.locator('.entry-hero img')).toBeVisible();
+});
+
 test('creates and retains a manual diary entry', async ({ page }) => {
   await expect(
     page.getByRole('heading', {
@@ -328,6 +415,14 @@ test('creates and retains a manual diary entry', async ({ page }) => {
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Mushroom toast');
   await page.getByLabel('Portion').fill('Two slices with mushrooms');
+  if (
+    !(await page.getByRole('button', { name: 'Add ingredient' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Ingredients & servings' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Add ingredient' }).click();
   await page
     .getByRole('textbox', { name: 'Ingredient', exact: true })
@@ -336,9 +431,17 @@ test('creates and retains a manual diary entry', async ({ page }) => {
     .getByRole('spinbutton', { name: 'Amount', exact: true })
     .fill('120');
   await page.getByRole('textbox', { name: 'Unit', exact: true }).fill('g');
+  if (
+    !(await page.getByRole('button', { name: 'Calculate locally' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Nutrition' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Calculate locally' }).click();
   await expect(page.getByLabel('Energy (kcal)')).not.toHaveValue('');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await expect(
     page.getByRole('heading', { name: 'Mushroom toast' }),
   ).toBeVisible();
@@ -360,7 +463,7 @@ test('records a post-meal check-in and restores it after reload', async ({
 }) => {
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Mushroom toast');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: 'Add check-in' }).click();
 
   await expect(
@@ -508,7 +611,7 @@ test('backs up, reconnects, and restores through mocked Google Drive', async ({
   await installMockGoogleDrive(page, drive);
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Drive test soup');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
 
@@ -594,7 +697,7 @@ test('offers clear choices when an existing Drive backup is found', async ({
   await installMockGoogleDrive(page, drive);
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Existing Drive soup');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
@@ -660,7 +763,7 @@ test('cancels restore without discarding an active local draft', async ({
   await installMockGoogleDrive(page, drive);
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Drive restore source');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
@@ -709,7 +812,7 @@ test('keeps offline edits local, resumes online, and requests reconnect after re
   await page.getByRole('button', { name: 'Back to diary' }).click();
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Offline lentil soup');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
   await expect(
@@ -750,7 +853,7 @@ test('coalesces edits made while a mocked Drive backup is in flight', async ({
 
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('First queued title');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
 
@@ -763,7 +866,7 @@ test('coalesces edits made while a mocked Drive backup is in flight', async ({
   await openSavedEntry(page, 'First queued title');
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('What was it?').fill('Latest queued title');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
 
@@ -794,7 +897,7 @@ test('debounces rapid local edits into one mocked Drive commit', async ({
   await installMockGoogleDrive(page, drive);
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Before rapid edits');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
@@ -805,10 +908,10 @@ test('debounces rapid local edits into one mocked Drive commit', async ({
   await openSavedEntry(page, 'Before rapid edits');
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('What was it?').fill('First rapid edit');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('What was it?').fill('Second rapid edit');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
   await expect(
@@ -841,7 +944,7 @@ test('backs off a mocked transient Drive failure before retrying', async ({
   await installMockGoogleDrive(page, drive);
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Before retry');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
@@ -852,7 +955,7 @@ test('backs off a mocked transient Drive failure before retrying', async ({
   await openSavedEntry(page, 'Before retry');
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('What was it?').fill('After retry');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
   drive.failNext(503);
@@ -887,7 +990,7 @@ test('surfaces a mocked remote conflict without overwriting Drive', async ({
   await installMockGoogleDrive(page, drive);
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Remote original');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Connect Google Drive' }).click();
@@ -902,7 +1005,7 @@ test('surfaces a mocked remote conflict without overwriting Drive', async ({
   await openSavedEntry(page, 'Remote original');
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByLabel('What was it?').fill('Local conflicting edit');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: /Settings/ }).click();
   await openSettingsSection(page, 'Backup & restore');
   await page.getByRole('button', { name: 'Back up now' }).click();
@@ -961,7 +1064,7 @@ test('analyses a selected image through a mocked compatible endpoint', async ({
   await expect(
     page.getByText(/Check every estimate before saving/),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await expect(
     page.getByRole('heading', { name: 'Tomato and herb toast' }),
   ).toBeVisible();
@@ -979,7 +1082,7 @@ test('scans, reviews, scales, and saves a nutrition label', async ({
     });
   });
   await startFirstMeal(page);
-  await page.getByRole('button', { name: 'Nutrition label' }).click();
+  await page.getByRole('button', { name: 'Scan label' }).click();
   await page
     .getByLabel('Choose nutrition label photo')
     .setInputFiles('public/icon-192.png');
@@ -998,7 +1101,7 @@ test('scans, reviews, scales, and saves a nutrition label', async ({
   await page.getByLabel('Amount consumed').fill('1.5');
   await expect(page.getByText(/Consumed: 180 kcal/)).toBeVisible();
   expect(await seriousAccessibilityViolations(page)).toEqual([]);
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await expect(
     page.getByRole('heading', { name: 'Cocoa oat bar' }),
   ).toBeVisible();
@@ -1018,14 +1121,14 @@ test('enters and scales a nutrition label manually without a photo', async ({
     await route.abort();
   });
   await startFirstMeal(page);
-  await page.getByRole('button', { name: 'Nutrition label' }).click();
+  await page.getByRole('button', { name: 'Scan label' }).click();
   await page.getByRole('button', { name: 'Enter label manually' }).click();
   await page.getByLabel('Product name').fill('Manual cereal');
   const nutrientRow = page.locator('.label-nutrient-row').first();
   await nutrientRow.getByLabel('Amount').fill('360');
   await page.getByLabel('Amount consumed').fill('50');
   await expect(page.getByText(/Consumed: 180 kcal/)).toBeVisible();
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await expect(
     page.getByRole('heading', { name: 'Manual cereal' }),
   ).toBeVisible();
@@ -1036,7 +1139,7 @@ test('recovers an unfinished nutrition label draft with its photo', async ({
   page,
 }) => {
   await startFirstMeal(page);
-  await page.getByRole('button', { name: 'Nutrition label' }).click();
+  await page.getByRole('button', { name: 'Scan label' }).click();
   await page
     .getByLabel('Choose nutrition label photo')
     .setInputFiles('public/icon-192.png');
@@ -1093,6 +1196,14 @@ test('does not treat recipe quantities as a consumed nutrition estimate', async 
   await page.getByRole('button', { name: 'Analyse photo' }).click();
   await expect(page.getByLabel('Kind of image')).toHaveValue('recipe_card');
   await expect(page.getByLabel('Energy (kcal)')).toHaveCount(0);
+  if (
+    !(await page.getByRole('button', { name: 'Calculate locally' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Nutrition' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Calculate locally' }).click();
   await expect(
     page.getByText(/Nutrition is only calculated for a consumed meal/),
@@ -1219,7 +1330,7 @@ test('deleting a meal also removes its unfinished edit draft', async ({
 }) => {
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Meal to delete');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.getByRole('button', { name: 'Edit' }).click();
   await page.getByLabel('What was it?').fill('Unfinished edited meal');
   await expect(page.getByText('Draft saved')).toBeVisible();
@@ -1248,8 +1359,12 @@ test('searches the diary and starts a fresh log from an entry', async ({
 }) => {
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Tuesday lentil bowl');
-  await page.getByLabel('Notes').fill('Extra lemon');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page
+    .locator('.editor-disclosure > summary')
+    .filter({ hasText: 'Kitchen notes' })
+    .click();
+  await page.getByLabel('Kitchen notes', { exact: true }).fill('Extra lemon');
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await expect(
     page.getByRole('heading', { name: 'Tuesday lentil bowl' }),
   ).toBeVisible();
@@ -1272,7 +1387,7 @@ test('searches the diary and starts a fresh log from an entry', async ({
   );
   await expect(page.getByLabel('Notes')).toHaveValue('');
   await page.getByLabel('What was it?').fill('Wednesday lentil bowl');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await expect(
     page.getByRole('heading', { name: 'Wednesday lentil bowl' }),
   ).toBeVisible();
@@ -1283,11 +1398,27 @@ test('lets people review and override a local nutrition match', async ({
 }) => {
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Tomato side');
+  if (
+    !(await page.getByRole('button', { name: 'Add ingredient' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Ingredients & servings' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Add ingredient' }).click();
   await page
     .getByRole('textbox', { name: 'Ingredient', exact: true })
     .fill('tomatoes');
   await page.getByLabel('Estimated grams').fill('100');
+  if (
+    !(await page.getByRole('button', { name: 'Calculate locally' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Nutrition' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Calculate locally' }).click();
   await page.getByRole('button', { name: 'Review match' }).click();
   await expect(
@@ -1306,6 +1437,7 @@ test('offers guided local-model setup and keyboard-reachable file inputs', async
   page,
 }) => {
   await startFirstMeal(page);
+  await page.getByRole('button', { name: 'Meal photo', exact: true }).click();
   const photoInput = page.locator('input[type="file"]').first();
   await expect(photoInput).not.toHaveCSS('display', 'none');
   await photoInput.focus();
@@ -1372,14 +1504,30 @@ test('has an installable manifest and no serious accessibility violations', asyn
   expect(nutritionPayload.foods.length).toBeGreaterThan(8_000);
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Accessible tomato salad');
+  if (
+    !(await page.getByRole('button', { name: 'Add ingredient' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Ingredients & servings' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Add ingredient' }).click();
   await page
     .getByRole('textbox', { name: 'Ingredient', exact: true })
     .fill('tomatoes');
   await page.getByLabel('Estimated grams').fill('150');
   await page.getByLabel('Preparation').fill('raw');
+  if (
+    !(await page.getByRole('button', { name: 'Calculate locally' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Nutrition' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Calculate locally' }).click();
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await expect(
     page.getByRole('heading', { name: 'Estimated nutrition' }),
   ).toBeVisible();
@@ -1397,6 +1545,14 @@ test('keeps the diary available offline', async ({
   );
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Offline soup');
+  if (
+    !(await page.getByRole('button', { name: 'Add ingredient' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Ingredients & servings' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Add ingredient' }).click();
   await page
     .getByRole('textbox', { name: 'Ingredient', exact: true })
@@ -1404,8 +1560,16 @@ test('keeps the diary available offline', async ({
   await page.getByLabel('Amount', { exact: true }).fill('200');
   await page.getByLabel('Unit', { exact: true }).fill('g');
   await page.getByLabel('Preparation').fill('boiled');
+  if (
+    !(await page.getByRole('button', { name: 'Calculate locally' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Nutrition' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Calculate locally' }).click();
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await page.evaluate(async () => {
     if ('serviceWorker' in navigator) await navigator.serviceWorker.ready;
   });

@@ -140,7 +140,7 @@ test('captures the visual review surfaces', async ({ page }, testInfo) => {
   await expect(page.getByLabel('What was it?')).toHaveValue(
     'Smoky chilli con carne with rice',
   );
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   await expect(
     page.getByRole('heading', { name: 'Smoky chilli con carne with rice' }),
   ).toBeVisible();
@@ -157,6 +157,14 @@ test('captures the visual review surfaces', async ({ page }, testInfo) => {
     .click();
   await page.getByLabel('What was it?').fill('Fresh tomato salad');
   await page.getByLabel('Portion').fill('A 150 g bowl of fresh tomatoes');
+  if (
+    !(await page.getByRole('button', { name: 'Add ingredient' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Ingredients & servings' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Add ingredient' }).click();
   await page
     .getByRole('textbox', { name: 'Ingredient', exact: true })
@@ -165,9 +173,17 @@ test('captures the visual review surfaces', async ({ page }, testInfo) => {
   await page.getByLabel('Unit', { exact: true }).fill('g');
   await page.getByLabel('Estimated grams').fill('150');
   await page.getByLabel('Preparation').fill('raw');
+  if (
+    !(await page.getByRole('button', { name: 'Calculate locally' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Nutrition' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Calculate locally' }).click();
   await expect(page.getByLabel('Energy (kcal)')).not.toHaveValue('');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   const nutritionCard = page.locator('.nutrition-card');
   await expect(nutritionCard).toBeVisible();
   if (await dismiss.isVisible()) await dismiss.click();
@@ -185,7 +201,7 @@ test('captures nutrition label surfaces', async ({ page }, testInfo) => {
   );
   await page.goto('/');
   await startFirstMeal(page);
-  await page.getByRole('button', { name: 'Nutrition label' }).click();
+  await page.getByRole('button', { name: 'Scan label' }).click();
   const project = testInfo.project.name;
   await page.screenshot({
     path: `output/visual-review/${project}-label-capture.png`,
@@ -215,7 +231,7 @@ test('captures nutrition label surfaces', async ({ page }, testInfo) => {
     fullPage: false,
   });
 
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   const summary = page.locator('.label-summary');
   await summary.scrollIntoViewIfNeeded();
   await page.screenshot({
@@ -238,11 +254,19 @@ test('captures meal follow-up surfaces', async ({ page }, testInfo) => {
   await page.goto('/');
   await startFirstMeal(page);
   await page.getByLabel('What was it?').fill('Mushroom toast');
+  if (
+    !(await page.getByRole('button', { name: 'Add ingredient' }).isVisible())
+  ) {
+    await page
+      .locator('.editor-disclosure > summary')
+      .filter({ hasText: 'Ingredients & servings' })
+      .click();
+  }
   await page.getByRole('button', { name: 'Add ingredient' }).click();
   await page
     .getByRole('textbox', { name: 'Ingredient', exact: true })
     .fill('Mushrooms');
-  await page.getByRole('button', { name: 'Save to this device' }).click();
+  await page.getByRole('button', { name: 'Save meal' }).click();
   const dismiss = page.getByRole('button', { name: 'Dismiss message' });
   await expect(dismiss).toBeVisible();
   await dismiss.click();

@@ -3791,3 +3791,211 @@ code {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Keep everyday entry focused; optional detail remains available on demand. */
+.editor-page {
+  padding-bottom: 150px;
+}
+.editor-page .stage-heading {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.editor-page .stage-heading h1 {
+  font-size: clamp(2rem, 3.5vw, 3rem);
+  line-height: 1.1;
+}
+.editor-intent-picker {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.editor-page--manual .editor-grid {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 780px;
+}
+.photo-column[hidden] {
+  display: none;
+}
+.meal-basics > label:first-child input {
+  font-size: 1.08rem;
+}
+.editor-disclosure {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 250, 240, 0.55);
+}
+.editor-disclosure > summary {
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 20px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+.editor-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.editor-disclosure > summary small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+.editor-disclosure > summary svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+.editor-disclosure[open] > summary svg {
+  transform: rotate(180deg);
+}
+.editor-disclosure > .form-card {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 18px 18px;
+  box-shadow: none;
+}
+.editor-disclosure .nutrition-editor-card {
+  margin-top: 0;
+}
+.editor-save-bar {
+  position: fixed;
+  z-index: 25;
+  bottom: 0;
+  left: 365px;
+  right: 0;
+  border-top: 1px solid var(--line);
+  background: var(--paper-light);
+  padding: 12px 24px calc(12px + env(safe-area-inset-bottom));
+}
+.editor-save-bar > div {
+  max-width: 650px;
+  margin: 0 auto;
+}
+.editor-save-bar small {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.editor-page :is(input, select, textarea, summary, button) {
+  scroll-margin-block: 110px 150px;
+}
+.entry-title-row h1 {
+  font-size: clamp(2rem, 3.5vw, 3.25rem);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.entry-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 20px 0 26px;
+}
+.entry-primary-actions .button {
+  min-height: 44px;
+}
+.entry-date-inline {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 22px;
+}
+.entry-date-inline span {
+  white-space: nowrap;
+}
+.entry-detail--text .entry-content {
+  padding-top: 45px;
+}
+
+@media (max-width: 780px) {
+  .app-shell--editor .mobile-nav .mobile-add {
+    transform: none;
+    align-self: center;
+    width: 48px;
+    height: 48px;
+  }
+  .editor-page {
+    padding-bottom: 220px;
+  }
+  .editor-page .stage-heading {
+    padding: 18px 18px 20px;
+    gap: 16px;
+  }
+  .editor-page .back-button {
+    min-height: 44px;
+  }
+  .editor-page .intent-option {
+    flex-direction: column;
+    gap: 5px;
+    padding: 8px 4px;
+    font-size: 0.78rem;
+  }
+  .editor-page .editor-intent-picker {
+    margin-bottom: 16px;
+  }
+  .editor-page .camera-drop {
+    min-height: 200px;
+    padding: 20px;
+    gap: 8px;
+  }
+  .editor-page .camera-orbit {
+    width: 48px;
+    height: 48px;
+    margin: 0;
+  }
+  .editor-page .camera-orbit svg {
+    width: 25px;
+    height: 25px;
+  }
+  .meal-basics .meal-time-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .meal-basics label {
+    margin-bottom: 12px;
+  }
+  .meal-basics input,
+  .meal-basics select {
+    min-width: 0;
+    font-size: 1rem;
+  }
+  .editor-disclosure > summary {
+    padding-inline: 16px;
+  }
+  .editor-save-bar {
+    left: 0;
+    bottom: calc(70px + env(safe-area-inset-bottom));
+    padding: 10px 16px;
+  }
+  .entry-detail--text .entry-mobile-back {
+    position: static;
+    margin: 12px 0 0 4px;
+  }
+  .entry-detail--text .entry-content {
+    padding-top: 14px;
+  }
+  .entry-title-row h1 {
+    font-size: 2rem;
+    margin-bottom: 12px;
+  }
+  .entry-date-inline {
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+  .entry-primary-actions {
+    margin: 16px 0 22px;
+  }
+}
+
+.editor-photo-note {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.editor-photo-note button {
+  min-height: 44px;
+}

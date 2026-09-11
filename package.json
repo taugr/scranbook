@@ -73,7 +73,7 @@
     "oxlint-tsgolint": "^7.0.2001",
     "sharp": "^0.35.4",
     "tsx": "^4.23.13",
-    "typescript": "6.0.3",
+    "typescript": "7.0.2",
     "vitest": "^4.1.11",
     "wrangler": "^4.131.0"
   },

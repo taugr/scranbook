@@ -59,7 +59,7 @@ development profile, but the provider is configurable.
 ## Requirements
 
 - Node.js 22.13+
-- pnpm 12.4.1
+- pnpm 12.4.2
 - Optional: an OpenAI-compatible vision endpoint such as LM Studio
 - Optional: a Google OAuth web client ID with the non-sensitive `drive.file` scope
 

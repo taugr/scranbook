@@ -25,7 +25,8 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'pnpm start',
+    // Keep the server in Playwright's process group so teardown stops it fully.
+    command: 'wrangler dev --port 3000',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
     url: 'http://127.0.0.1:3000',

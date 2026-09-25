@@ -109,19 +109,11 @@ async function clearBrowserData(page: import('@playwright/test').Page) {
 }
 
 async function startFirstMeal(page: import('@playwright/test').Page) {
-  const mobileAdd = page.getByRole('button', { name: 'Add', exact: true });
-  if (await mobileAdd.isVisible()) {
-    await mobileAdd.click();
-    return;
-  }
-  const desktopAdd = page.getByRole('button', { name: 'Add a meal' });
-  if (await desktopAdd.isVisible()) {
-    await desktopAdd.click();
-    return;
-  }
+  // Wait for the responsive control instead of checking before hydration finishes.
   await page
-    .getByRole('main')
-    .getByRole('button', { name: 'Add your first meal' })
+    .getByRole('button', { name: /^(Add|Add a meal|Add your first meal)$/ })
+    .filter({ visible: true })
+    .first()
     .click();
 }
 
